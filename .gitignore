@@ -1,1 +1,8 @@
 node_modules
+dist/
+.env
+server.out.log
+server.err.log
+.env.local
+.env.*.local
+.DS_Store

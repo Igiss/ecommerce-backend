@@ -13,7 +13,7 @@ Tạo file `.env` từ `.env.example`:
 
 ```env
 PORT=3000
-MONGO_URI=mongodb://127.0.0.1:27017/ecommerce
+MONGO_URI=mongodb:
 JWT_SECRET=change_this_secret
 JWT_EXPIRES_IN=7d
 ```

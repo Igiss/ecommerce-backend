@@ -1,5 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import * as bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import { Model } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
@@ -41,6 +43,34 @@ export class UsersService {
 
   async findByEmailWithPassword(email: string) {
     return this.userModel.findOne({ email }).select('+password').exec();
+  }
+
+  async findOrCreateGoogleUser(profile: {
+    googleId: string;
+    email: string;
+    fullName: string;
+    avatar?: string;
+  }) {
+    let user = await this.userModel.findOne({ googleId: profile.googleId }).exec();
+    if (user) {
+      return user;
+    }
+
+    user = await this.userModel.findOne({ email: profile.email.toLowerCase() }).exec();
+    if (user) {
+      user.googleId = profile.googleId;
+      if (!user.avatar && profile.avatar) {
+        user.avatar = profile.avatar;
+      }
+      return user.save();
+    }
+
+    const password = await bcrypt.hash(randomBytes(32).toString('hex'), 10);
+    return this.userModel.create({
+      ...profile,
+      email: profile.email.toLowerCase(),
+      password,
+    });
   }
 
   async updateProfile(id: string, updateProfileDto: UpdateProfileDto) {

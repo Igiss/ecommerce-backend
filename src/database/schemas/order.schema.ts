@@ -10,6 +10,7 @@ export enum PaymentMethod {
   COD = 'COD',
   Banking = 'BANKING',
   Momo = 'MOMO',
+  VNPay = 'VNPAY',
 }
 
 @Schema({ _id: false })

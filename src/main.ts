@@ -40,6 +40,12 @@ async function bootstrap() {
 
   const port = configService.get<number>('PORT') || 3000;
   await app.listen(port);
+
+  const baseUrl = `http://localhost:${port}`;
+  console.log(`Server: ${baseUrl}`);
+  console.log(`API: ${baseUrl}/api`);
+  console.log(`Swagger: ${baseUrl}/api/docs`);
+  console.log(`Uploads: ${baseUrl}/uploads`);
 }
 
 void bootstrap();

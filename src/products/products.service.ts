@@ -106,6 +106,18 @@ export class ProductsService {
     return product;
   }
 
+  searchForAssistant(search: string) {
+    const terms = search.trim();
+    const filter: FilterQuery<ProductDocument> = {
+      status: ProductStatus.Active,
+    };
+    if (terms) {
+      filter.$text = { $search: terms };
+    }
+
+    return this.productModel.find(filter).limit(10).exec();
+  }
+
   private buildFilter(query: ProductQueryDto) {
     const filter: FilterQuery<ProductDocument> = {};
 

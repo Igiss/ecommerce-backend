@@ -2,8 +2,10 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { AuthModule } from './auth/auth.module';
 import { CartModule } from './cart/cart.module';
+import { ChatModule } from './chat/chat.module';
 import { CategoriesModule } from './categories/categories.module';
 import { CustomDesignsModule } from './custom-designs/custom-designs.module';
+import { CouponsModule } from './coupons/coupons.module';
 import { DatabaseModule } from './database/database.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { OrdersModule } from './orders/orders.module';
@@ -26,6 +28,7 @@ import { UsersModule } from './users/users.module';
     CategoriesModule,
     ProductsModule,
     CartModule,
+    CouponsModule,
     OrdersModule,
     PaymentsModule,
     ReviewsModule,
@@ -33,6 +36,7 @@ import { UsersModule } from './users/users.module';
     UploadModule,
     NotificationsModule,
     ReportsModule,
+    ChatModule,
   ],
 })
 export class AppModule {}

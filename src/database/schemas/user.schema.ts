@@ -22,6 +22,9 @@ export class User {
   @Prop()
   avatar?: string;
 
+  @Prop({ unique: true, sparse: true })
+  googleId?: string;
+
   @Prop({ enum: Role, default: Role.User })
   role: Role;
 

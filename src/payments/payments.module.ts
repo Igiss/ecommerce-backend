@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
-import { PaymentsController } from './payments.controller';
+import { PaymentsController, VnpayController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 
 @Module({
@@ -12,7 +12,7 @@ import { PaymentsService } from './payments.service';
       { name: Order.name, schema: OrderSchema },
     ]),
   ],
-  controllers: [PaymentsController],
+  controllers: [PaymentsController, VnpayController],
   providers: [PaymentsService],
 })
 export class PaymentsModule {}

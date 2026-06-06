@@ -7,6 +7,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UsersService } from '../users/users.service';
+import { UserDocument } from '../database/schemas/user.schema';
 
 @Injectable()
 export class AuthService {
@@ -64,6 +65,13 @@ export class AuthService {
     await this.usersService.updatePassword(user.sub, password);
 
     return { message: 'Password changed successfully' };
+  }
+
+  async googleLogin(user: UserDocument) {
+    return {
+      user: this.usersService.toPublicUser(user),
+      accessToken: await this.signToken(user.id, user.email, user.role),
+    };
   }
 
   private async signToken(userId: string, email: string, role: JwtPayload['role']) {

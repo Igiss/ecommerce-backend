@@ -1,5 +1,6 @@
-import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { Request, Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -41,5 +42,36 @@ export class PaymentsController {
   @Roles(Role.Admin, Role.Staff)
   updateStatus(@Param('id') id: string, @Body() dto: UpdatePaymentStatusDto) {
     return this.paymentsService.updateStatus(id, dto);
+  }
+
+  @Post('vnpay/:orderId/url')
+  @ApiOperation({ summary: '[User] Create a VNPay payment URL for an order' })
+  createVnpayUrl(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId') orderId: string,
+    @Req() request: Request,
+  ) {
+    return this.paymentsService.createVnpayUrl(user.sub, orderId, request.ip);
+  }
+}
+
+@ApiTags('Payments')
+@Controller('payments/vnpay')
+export class VnpayController {
+  constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Get('return')
+  async handleReturn(
+    @Query() query: Record<string, string>,
+    @Res() response: Response,
+  ) {
+    const result = await this.paymentsService.handleVnpayCallback(query);
+    const redirectUrl = this.paymentsService.buildVnpayRedirect(result);
+    return response.redirect(redirectUrl);
+  }
+
+  @Get('ipn')
+  handleIpn(@Query() query: Record<string, string>) {
+    return this.paymentsService.handleVnpayIpn(query);
   }
 }

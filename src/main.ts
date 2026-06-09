@@ -31,11 +31,11 @@ async function bootstrap() {
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);
   SwaggerModule.setup('api/docs', app, document, {
-    customCss: `
-      .swagger-ui .models {
-        display: none !important;
-      }
-    `,
+    swaggerOptions: {
+      docExpansion: 'list',
+      persistAuthorization: true,
+      defaultModelsExpandDepth: 1,
+    },
   });
 
   const port = configService.get<number>('PORT') || 3000;

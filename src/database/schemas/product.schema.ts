@@ -62,6 +62,9 @@ export const ProductCustomOptionsSchema = SchemaFactory.createForClass(ProductCu
 
 @Schema({ timestamps: true })
 export class Product {
+  @Prop({ type: Number, min: 1 })
+  productId?: number;
+
   @Prop({ required: true, trim: true })
   name: string;
 
@@ -127,6 +130,7 @@ export class Product {
 export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.index({ name: 'text', description: 'text', brand: 'text' });
+ProductSchema.index({ productId: 1 }, { unique: true, sparse: true });
 ProductSchema.index({ slug: 1 }, { unique: true });
 ProductSchema.index({ productType: 1 });
 ProductSchema.index({ categoryId: 1 });
@@ -139,7 +143,9 @@ ProductSchema.set('toJSON', {
   versionKey: false,
   transform: (_doc, ret) => {
     const transformed = ret as unknown as Record<string, unknown>;
+    transformed.id = transformed.productId;
     delete transformed._id;
+    delete transformed.productId;
     return ret;
   },
 });

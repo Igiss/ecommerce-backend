@@ -19,7 +19,7 @@ export class CartService {
 
   async addItem(userId: string, dto: AddCartItemDto) {
     const product = await this.productModel
-      .findOne({ _id: dto.productId, status: { $ne: ProductStatus.Deleted } })
+      .findOne({ productId: dto.productId, status: { $ne: ProductStatus.Deleted } })
       .exec();
 
     if (!product) {
@@ -28,7 +28,7 @@ export class CartService {
 
     const cart = await this.getOrCreateCart(userId);
     const item = cart.items.find((cartItem) => {
-      const sameProduct = cartItem.productId.toString() === dto.productId;
+      const sameProduct = cartItem.productId.toString() === product._id.toString();
       const sameDesign =
         (cartItem.customDesignId?.toString() || '') === (dto.customDesignId || '');
       return sameProduct && sameDesign;
@@ -38,7 +38,7 @@ export class CartService {
       item.quantity += dto.quantity;
     } else {
       cart.items.push({
-        productId: new Types.ObjectId(dto.productId),
+        productId: product._id,
         customDesignId: dto.customDesignId ? new Types.ObjectId(dto.customDesignId) : undefined,
         quantity: dto.quantity,
         price: product.salePrice ?? product.price,
@@ -50,9 +50,16 @@ export class CartService {
     return cart.save();
   }
 
-  async updateItem(userId: string, productId: string, dto: UpdateCartItemDto) {
+  async updateItem(userId: string, productId: number, dto: UpdateCartItemDto) {
+    const product = await this.productModel.findOne({ productId }).select('_id').exec();
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     const cart = await this.getOrCreateCart(userId);
-    const item = cart.items.find((cartItem) => cartItem.productId.toString() === productId);
+    const item = cart.items.find(
+      (cartItem) => cartItem.productId.toString() === product._id.toString(),
+    );
 
     if (!item) {
       throw new NotFoundException('Cart item not found');
@@ -62,9 +69,16 @@ export class CartService {
     return cart.save();
   }
 
-  async removeItem(userId: string, productId: string) {
+  async removeItem(userId: string, productId: number) {
+    const product = await this.productModel.findOne({ productId }).select('_id').exec();
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     const cart = await this.getOrCreateCart(userId);
-    cart.items = cart.items.filter((item) => item.productId.toString() !== productId);
+    cart.items = cart.items.filter(
+      (item) => item.productId.toString() !== product._id.toString(),
+    );
     return cart.save();
   }
 

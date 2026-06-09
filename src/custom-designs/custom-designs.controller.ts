@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import { CreateCustomDesignDto } from './dto/create-custom-design.dto';
 import { UpdateCustomDesignStatusDto } from './dto/update-custom-design-status.dto';
 import { CustomDesignsService } from './custom-designs.service';
@@ -30,22 +31,25 @@ export class CustomDesignsController {
   }
 
   @Get()
-  @ApiOperation({ summary: '[Admin/Staff] Lấy danh sách tất cả yêu cầu custom' })
-  @Roles(Role.Admin, Role.Staff)
+  @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách tất cả yêu cầu custom' })
+  @Roles(Role.Admin, Role.Owner)
   findAll() {
     return this.customDesignsService.findAll();
   }
 
   @Get(':id')
-  @ApiOperation({ summary: '[Owner/Admin/Staff] Xem chi tiết yêu cầu custom' })
-  findOne(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @ApiOperation({ summary: '[User/Admin/Owner] Xem chi tiết yêu cầu custom' })
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của yêu cầu custom' })
+  @ApiBadRequestResponse({ description: 'ID yêu cầu custom không hợp lệ' })
+  findOne(@CurrentUser() user: JwtPayload, @Param('id', ParseMongoIdPipe) id: string) {
     return this.customDesignsService.findOne(id, user.sub, user.role);
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: '[Admin/Staff] Cập nhật trạng thái yêu cầu custom và ghi chú admin' })
-  @Roles(Role.Admin, Role.Staff)
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateCustomDesignStatusDto) {
+  @ApiOperation({ summary: '[Admin/Owner] Cập nhật trạng thái yêu cầu custom và ghi chú admin' })
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của yêu cầu custom' })
+  @Roles(Role.Admin, Role.Owner)
+  updateStatus(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateCustomDesignStatusDto) {
     return this.customDesignsService.updateStatus(id, dto);
   }
 }

@@ -1,10 +1,11 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
+import { ParsePositiveIntPipe } from '../common/pipes/parse-positive-int.pipe';
 import { CartService } from './cart.service';
 
 @ApiTags('Cart')
@@ -28,9 +29,11 @@ export class CartController {
 
   @Patch('items/:productId')
   @ApiOperation({ summary: '[User] Cập nhật số lượng sản phẩm trong giỏ hàng' })
+  @ApiParam({ name: 'productId', type: Number, example: 1, description: 'ID số của sản phẩm' })
+  @ApiBadRequestResponse({ description: 'productId phải là số nguyên dương' })
   updateItem(
     @CurrentUser() user: JwtPayload,
-    @Param('productId') productId: string,
+    @Param('productId', ParsePositiveIntPipe) productId: number,
     @Body() dto: UpdateCartItemDto,
   ) {
     return this.cartService.updateItem(user.sub, productId, dto);
@@ -38,7 +41,11 @@ export class CartController {
 
   @Delete('items/:productId')
   @ApiOperation({ summary: '[User] Xóa một sản phẩm khỏi giỏ hàng' })
-  removeItem(@CurrentUser() user: JwtPayload, @Param('productId') productId: string) {
+  @ApiParam({ name: 'productId', type: Number, example: 1, description: 'ID số của sản phẩm' })
+  removeItem(
+    @CurrentUser() user: JwtPayload,
+    @Param('productId', ParsePositiveIntPipe) productId: number,
+  ) {
     return this.cartService.removeItem(user.sub, productId);
   }
 

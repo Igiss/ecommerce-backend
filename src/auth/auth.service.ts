@@ -8,6 +8,7 @@ import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { UsersService } from '../users/users.service';
 import { UserDocument } from '../database/schemas/user.schema';
+import { Role } from '../common/enums/role.enum';
 
 @Injectable()
 export class AuthService {
@@ -18,6 +19,26 @@ export class AuthService {
   ) {}
 
   async register(registerDto: RegisterDto) {
+    const user = await this.createAccount(registerDto, Role.User);
+
+    return {
+      user,
+      accessToken: await this.signToken(String(user.id), user.email, user.role),
+    };
+  }
+
+  async registerOwner(registerDto: RegisterDto) {
+    return {
+      user: await this.createAccount(registerDto, Role.Owner, 'pending'),
+      message: 'Owner account registered and is waiting for admin approval',
+    };
+  }
+
+  private async createAccount(
+    registerDto: RegisterDto,
+    role: Role,
+    status: 'pending' | 'active' = 'active',
+  ) {
     const existingUser = await this.usersService.findByEmail(registerDto.email);
     if (existingUser) {
       throw new BadRequestException('Email already exists');
@@ -27,18 +48,21 @@ export class AuthService {
     const user = await this.usersService.create({
       ...registerDto,
       password,
+      role,
+      status,
     });
 
-    return {
-      user,
-      accessToken: await this.signToken(String(user.id), user.email, user.role),
-    };
+    return user;
   }
 
   async login(loginDto: LoginDto) {
     const user = await this.usersService.findByEmailWithPassword(loginDto.email);
     if (!user || !(await bcrypt.compare(loginDto.password, user.password))) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+
+    if (user.status === 'pending') {
+      throw new UnauthorizedException('Owner account is waiting for admin approval');
     }
 
     if (user.status !== 'active') {

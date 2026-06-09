@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { diskStorage } from 'multer';
 import { extname } from 'path';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -28,7 +28,8 @@ export class UploadController {
 
   @Post('product-image')
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '[Admin/Staff] Upload ảnh sản phẩm, trả URL ảnh local' })
+  @ApiOperation({ summary: '[Admin/Owner] Upload ảnh sản phẩm, trả URL ảnh local' })
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', { storage: storage('products') }))
   uploadProductImage(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
@@ -40,6 +41,7 @@ export class UploadController {
   @Post('avatar')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: '[User] Upload avatar, trả URL ảnh local' })
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', { storage: storage('avatars') }))
   uploadAvatar(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {
@@ -51,6 +53,7 @@ export class UploadController {
   @Post('custom-design')
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: '[User] Upload ảnh/file mẫu cho yêu cầu custom' })
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
   @UseInterceptors(FileInterceptor('file', { storage: storage('custom-designs') }))
   uploadCustomDesign(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
     if (!file) {

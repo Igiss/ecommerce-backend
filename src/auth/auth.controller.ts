@@ -5,6 +5,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
+import { RegisterOwnerDto } from './dto/register-owner.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -22,6 +23,12 @@ export class AuthController {
     return this.authService.register(registerDto);
   }
 
+  @Post('register-owner')
+  @ApiOperation({ summary: '[Public] Đăng ký tài khoản owner chờ admin duyệt' })
+  registerOwner(@Body() registerDto: RegisterOwnerDto) {
+    return this.authService.registerOwner(registerDto);
+  }
+
   @Post('login')
   @ApiOperation({ summary: '[Public] Đăng nhập và nhận access token' })
   login(@Body() loginDto: LoginDto) {
@@ -29,12 +36,14 @@ export class AuthController {
   }
 
   @Get('google')
+  @ApiOperation({ summary: '[Public] Chuyển hướng sang trang đăng nhập Google' })
   @UseGuards(GoogleAuthGuard)
   googleAuth() {
     return;
   }
 
   @Get('google/callback')
+  @ApiOperation({ summary: '[Public] Google OAuth callback và chuyển hướng về frontend' })
   @UseGuards(GoogleAuthGuard)
   async googleCallback(@Req() request: Request, @Res() response: Response) {
     const result = await this.authService.googleLogin(request.user as UserDocument);

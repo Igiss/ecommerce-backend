@@ -18,7 +18,7 @@ export class ReviewsService {
 
   async create(userId: string, dto: CreateReviewDto) {
     const [product, order] = await Promise.all([
-      this.productModel.findById(dto.productId).exec(),
+      this.productModel.findOne({ productId: dto.productId }).exec(),
       this.orderModel.findById(dto.orderId).exec(),
     ]);
 
@@ -35,14 +35,19 @@ export class ReviewsService {
     return this.reviewModel.create({
       ...dto,
       userId: new Types.ObjectId(userId),
-      productId: new Types.ObjectId(dto.productId),
+      productId: product._id,
       orderId: new Types.ObjectId(dto.orderId),
     });
   }
 
-  async findByProduct(productId: string) {
+  async findByProduct(productId: number) {
+    const product = await this.productModel.findOne({ productId }).select('_id').exec();
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
     return this.reviewModel
-      .find({ productId, status: ReviewStatus.Visible })
+      .find({ productId: product._id, status: ReviewStatus.Visible })
       .populate('userId', 'fullName avatar')
       .sort({ createdAt: -1 })
       .exec();

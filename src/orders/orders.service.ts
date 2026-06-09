@@ -29,7 +29,7 @@ export class OrdersService {
         }
 
         const product = await this.productModel
-          .findOne({ _id: item.productId, status: { $ne: ProductStatus.Deleted } })
+          .findOne({ productId: item.productId, status: { $ne: ProductStatus.Deleted } })
           .exec();
 
         if (!product) {
@@ -45,7 +45,7 @@ export class OrdersService {
 
         const price = product.salePrice ?? product.price;
         return {
-          productId: new Types.ObjectId(item.productId),
+          productId: product._id,
           customDesignId: item.customDesignId ? new Types.ObjectId(item.customDesignId) : undefined,
           productName: product.name,
           productType: product.productType,

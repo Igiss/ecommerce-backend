@@ -3,7 +3,7 @@ import { HydratedDocument } from 'mongoose';
 import { Role } from '../../common/enums/role.enum';
 
 export type UserDocument = HydratedDocument<User>;
-export type UserStatus = 'active' | 'blocked';
+export type UserStatus = 'pending' | 'active' | 'blocked';
 
 @Schema({ timestamps: true })
 export class User {
@@ -28,7 +28,7 @@ export class User {
   @Prop({ enum: Role, default: Role.User })
   role: Role;
 
-  @Prop({ enum: ['active', 'blocked'], default: 'active' })
+  @Prop({ enum: ['pending', 'active', 'blocked'], default: 'active' })
   status: UserStatus;
 
   @Prop({ type: String, default: '' })

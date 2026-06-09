@@ -1,11 +1,12 @@
 import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 import { NotificationsService } from './notifications.service';
 
@@ -17,8 +18,8 @@ export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}
 
   @Post()
-  @ApiOperation({ summary: '[Admin/Staff] Tạo thông báo gửi tới user' })
-  @Roles(Role.Admin, Role.Staff)
+  @ApiOperation({ summary: '[Admin/Owner] Tạo thông báo gửi tới user' })
+  @Roles(Role.Admin, Role.Owner)
   create(@Body() dto: CreateNotificationDto) {
     return this.notificationsService.create(dto);
   }
@@ -31,7 +32,9 @@ export class NotificationsController {
 
   @Patch(':id/read')
   @ApiOperation({ summary: '[User] Đánh dấu một thông báo là đã đọc' })
-  markAsRead(@CurrentUser() user: JwtPayload, @Param('id') id: string) {
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của thông báo' })
+  @ApiBadRequestResponse({ description: 'ID thông báo không hợp lệ' })
+  markAsRead(@CurrentUser() user: JwtPayload, @Param('id', ParseMongoIdPipe) id: string) {
     return this.notificationsService.markAsRead(id, user.sub);
   }
 

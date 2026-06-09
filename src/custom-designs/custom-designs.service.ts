@@ -15,17 +15,20 @@ export class CustomDesignsService {
   ) {}
 
   async create(userId: string, dto: CreateCustomDesignDto) {
+    let productObjectId: Types.ObjectId | undefined;
+
     if (dto.productId) {
-      const product = await this.productModel.findById(dto.productId).exec();
+      const product = await this.productModel.findOne({ productId: dto.productId }).exec();
       if (!product) {
         throw new NotFoundException('Product not found');
       }
+      productObjectId = product._id;
     }
 
     return this.customDesignModel.create({
       ...dto,
       userId: new Types.ObjectId(userId),
-      productId: dto.productId ? new Types.ObjectId(dto.productId) : undefined,
+      productId: productObjectId,
       uploadedFiles: dto.uploadedFiles?.map((id) => new Types.ObjectId(id)) || [],
     });
   }

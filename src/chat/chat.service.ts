@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   HttpException,
   HttpStatus,
   Injectable,
@@ -22,11 +23,21 @@ export class ChatService {
       throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
     }
 
+    const messages = dto.messages?.length
+      ? dto.messages
+      : dto.message
+        ? [{ role: 'user' as const, content: dto.message }]
+        : [];
+
+    if (!messages.length) {
+      throw new BadRequestException('message or messages is required');
+    }
+
     const products = await this.productsService.searchForAssistant(
-      dto.messages.at(-1)?.content || '',
+      messages.at(-1)?.content || '',
     );
     const productContext = products.map((product) => ({
-      id: product.id,
+      id: product.productId,
       name: product.name,
       price: product.salePrice ?? product.price,
       stock: product.stock,
@@ -41,7 +52,7 @@ export class ChatService {
 
     const prompt = [
       `Product context: ${JSON.stringify(productContext)}`,
-      ...dto.messages.map((message) => `${message.role}: ${message.content}`),
+      ...messages.map((message) => `${message.role}: ${message.content}`),
     ].join('\n');
 
     try {

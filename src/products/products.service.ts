@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { buildPaginationMeta, getPagination } from '../common/helpers/pagination.helper';
@@ -8,22 +8,30 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
+import { Counter, CounterDocument } from '../database/schemas/counter.schema';
 
 @Injectable()
-export class ProductsService {
+export class ProductsService implements OnModuleInit {
   constructor(
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
+    @InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>,
     private readonly categoriesService: CategoriesService,
   ) {}
+
+  async onModuleInit() {
+    await this.assignIdsToExistingProducts();
+  }
 
   async create(createProductDto: CreateProductDto, createdBy: string) {
     await this.categoriesService.findOne(createProductDto.categoryId);
 
     const slug = createSlug(createProductDto.slug || createProductDto.name);
     await this.ensureSlugAvailable(slug);
+    const productId = await this.getNextProductId();
 
     return this.productModel.create({
       ...createProductDto,
+      productId,
       slug,
       createdBy: new Types.ObjectId(createdBy),
     });
@@ -53,9 +61,9 @@ export class ProductsService {
     };
   }
 
-  async findOne(id: string) {
+  async findOne(id: number) {
     const product = await this.productModel
-      .findOne({ _id: id, status: { $ne: ProductStatus.Deleted } })
+      .findOne({ productId: id, status: { $ne: ProductStatus.Deleted } })
       .populate('categoryId', 'name slug')
       .populate('createdBy', 'fullName email')
       .exec();
@@ -67,7 +75,7 @@ export class ProductsService {
     return product;
   }
 
-  async update(id: string, updateProductDto: UpdateProductDto) {
+  async update(id: number, updateProductDto: UpdateProductDto) {
     const product = await this.findOne(id);
 
     if (updateProductDto.categoryId) {
@@ -77,12 +85,12 @@ export class ProductsService {
     const slugSource = updateProductDto.slug || updateProductDto.name;
     if (slugSource) {
       const slug = createSlug(slugSource);
-      await this.ensureSlugAvailable(slug, product.id);
+      await this.ensureSlugAvailable(slug, product._id.toString());
       updateProductDto.slug = slug;
     }
 
     const updatedProduct = await this.productModel
-      .findByIdAndUpdate(id, updateProductDto, { new: true })
+      .findByIdAndUpdate(product._id, updateProductDto, { new: true })
       .populate('categoryId', 'name slug')
       .populate('createdBy', 'fullName email')
       .exec();
@@ -94,9 +102,9 @@ export class ProductsService {
     return updatedProduct;
   }
 
-  async remove(id: string) {
+  async remove(id: number) {
     const product = await this.productModel
-      .findByIdAndUpdate(id, { status: ProductStatus.Deleted }, { new: true })
+      .findOneAndUpdate({ productId: id }, { status: ProductStatus.Deleted }, { new: true })
       .exec();
 
     if (!product) {
@@ -160,6 +168,46 @@ export class ProductsService {
     const existingProduct = await this.productModel.findOne({ slug }).exec();
     if (existingProduct && existingProduct.id !== ignoreId) {
       throw new BadRequestException('Product slug already exists');
+    }
+  }
+
+  private async getNextProductId() {
+    const counter = await this.counterModel
+      .findByIdAndUpdate(
+        'product',
+        { $inc: { sequence: 1 } },
+        { new: true, upsert: true, setDefaultsOnInsert: true },
+      )
+      .exec();
+
+    return counter.sequence;
+  }
+
+  private async assignIdsToExistingProducts() {
+    const highestProduct = await this.productModel
+      .findOne({ productId: { $exists: true } })
+      .sort({ productId: -1 })
+      .select('productId')
+      .lean()
+      .exec();
+
+    await this.counterModel
+      .findByIdAndUpdate(
+        'product',
+        { $max: { sequence: highestProduct?.productId || 0 } },
+        { upsert: true, setDefaultsOnInsert: true },
+      )
+      .exec();
+
+    const productsWithoutId = await this.productModel
+      .find({ productId: { $exists: false } })
+      .sort({ createdAt: 1, _id: 1 })
+      .select('_id')
+      .exec();
+
+    for (const product of productsWithoutId) {
+      const productId = await this.getNextProductId();
+      await this.productModel.updateOne({ _id: product._id }, { productId }).exec();
     }
   }
 }

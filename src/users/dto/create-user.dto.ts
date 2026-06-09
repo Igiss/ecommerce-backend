@@ -1,6 +1,7 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength } from 'class-validator';
+import { IsEmail, IsEnum, IsIn, IsOptional, IsString, MinLength } from 'class-validator';
 import { IsVietnamPhone } from '../../common/decorators/is-vietnam-phone.decorator';
 import { Role } from '../../common/enums/role.enum';
+import { UserStatus } from '../../database/schemas/user.schema';
 
 export class CreateUserDto {
   @IsString()
@@ -20,4 +21,8 @@ export class CreateUserDto {
   @IsOptional()
   @IsEnum(Role)
   role?: Role;
+
+  @IsOptional()
+  @IsIn(['pending', 'active', 'blocked'])
+  status?: UserStatus;
 }

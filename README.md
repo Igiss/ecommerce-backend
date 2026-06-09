@@ -92,19 +92,19 @@ Users:
 
 Categories:
 
-- `POST /api/categories` - admin/staff
+- `POST /api/categories` - admin/owner
 - `GET /api/categories`
 - `GET /api/categories/:id`
-- `PATCH /api/categories/:id` - admin/staff
-- `DELETE /api/categories/:id` - admin/staff, chuyển `status` sang `inactive`
+- `PATCH /api/categories/:id` - admin/owner
+- `DELETE /api/categories/:id` - admin/owner, chuyển `status` sang `inactive`
 
 Products:
 
-- `POST /api/products` - admin/staff
+- `POST /api/products` - admin/owner
 - `GET /api/products`
 - `GET /api/products/:id`
-- `PATCH /api/products/:id` - admin/staff
-- `DELETE /api/products/:id` - admin/staff, soft delete bằng `status=deleted`
+- `PATCH /api/products/:id` - admin/owner
+- `DELETE /api/products/:id` - admin/owner, soft delete bằng `status=deleted`
 
 Query sản phẩm hỗ trợ:
 
@@ -129,17 +129,17 @@ Orders:
 
 - `POST /api/orders` - user
 - `GET /api/orders/me` - user
-- `GET /api/orders` - admin/staff
-- `GET /api/orders/:id` - owner/admin/staff
-- `PATCH /api/orders/:id/status` - admin/staff
+- `GET /api/orders` - admin/owner
+- `GET /api/orders/:id` - owner/admin
+- `PATCH /api/orders/:id/status` - admin/owner
 - `PATCH /api/orders/:id/cancel` - owner, chỉ đơn `pending`
 
 Payments:
 
 - `POST /api/payments` - user, mock COD/BANKING/MOMO
 - `GET /api/payments/me` - user
-- `GET /api/payments` - admin/staff
-- `PATCH /api/payments/:id/status` - admin/staff
+- `GET /api/payments` - admin/owner
+- `PATCH /api/payments/:id/status` - admin/owner
 
 Reviews:
 
@@ -152,9 +152,9 @@ Custom Designs:
 
 - `POST /api/custom-designs` - user
 - `GET /api/custom-designs/me` - user
-- `GET /api/custom-designs` - admin/staff
-- `GET /api/custom-designs/:id` - owner/admin/staff
-- `PATCH /api/custom-designs/:id/status` - admin/staff
+- `GET /api/custom-designs` - admin/owner
+- `GET /api/custom-designs/:id` - owner/admin
+- `PATCH /api/custom-designs/:id/status` - admin/owner
 
 Upload:
 
@@ -164,7 +164,7 @@ Upload:
 
 Notifications:
 
-- `POST /api/notifications` - admin/staff
+- `POST /api/notifications` - admin/owner
 - `GET /api/notifications/me` - user
 - `PATCH /api/notifications/:id/read` - owner
 - `PATCH /api/notifications/read-all` - user
@@ -176,7 +176,7 @@ Reports:
 ## Role
 
 - `admin`: toàn quyền
-- `staff`: quản lý sản phẩm, đơn hàng, tồn kho
+- `owner`: quản lý sản phẩm, đơn hàng, tồn kho
 - `user`: xem sản phẩm, giỏ hàng, đặt hàng, đánh giá
 
 ## Thiết kế Database MongoDB
@@ -196,7 +196,7 @@ Fields:
 - `password`: String, required, `select: false`
 - `phone`: String, optional
 - `avatar`: String, optional, ref URL upload
-- `role`: String, required, default `user`, enum `admin|staff|user`
+- `role`: String, required, default `user`, enum `admin|owner|user`
 - `status`: String, required, default `active`, enum `active|blocked`
 - `address`: String, optional, default `''`
 

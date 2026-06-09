@@ -1,8 +1,16 @@
 import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiNotFoundResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
@@ -28,7 +36,10 @@ export class UsersController {
   @Get(':id')
   @ApiOperation({ summary: '[Admin] Xem chi tiết user theo id' })
   @Roles(Role.Admin)
-  findOne(@Param('id') id: string) {
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của user' })
+  @ApiBadRequestResponse({ description: 'ID user không hợp lệ' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy user' })
+  findOne(@Param('id', ParseMongoIdPipe) id: string) {
     return this.usersService.findById(id);
   }
 
@@ -39,16 +50,18 @@ export class UsersController {
   }
 
   @Patch(':id/status')
-  @ApiOperation({ summary: '[Admin] Khóa hoặc mở khóa user' })
+  @ApiOperation({ summary: '[Admin] Duyệt, khóa hoặc mở khóa tài khoản' })
   @Roles(Role.Admin)
-  updateStatus(@Param('id') id: string, @Body() dto: UpdateUserStatusDto) {
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của user' })
+  updateStatus(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateUserStatusDto) {
     return this.usersService.updateStatus(id, dto);
   }
 
   @Patch(':id/role')
   @ApiOperation({ summary: '[Admin] Đổi role user' })
   @Roles(Role.Admin)
-  updateRole(@Param('id') id: string, @Body() dto: UpdateUserRoleDto) {
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của user' })
+  updateRole(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateUserRoleDto) {
     return this.usersService.updateRole(id, dto);
   }
 }

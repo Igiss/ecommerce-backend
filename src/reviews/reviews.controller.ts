@@ -1,5 +1,13 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
-import { ApiBadRequestResponse, ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -16,7 +24,15 @@ export class ReviewsController {
 
   @Post()
   @ApiBearerAuth()
-  @ApiOperation({ summary: '[User] Đánh giá sản phẩm đã mua trong đơn hàng' })
+  @ApiOperation({
+    summary: '[User] Đánh giá sản phẩm trong đơn đã hoàn tất, mỗi đơn một lần',
+  })
+  @ApiBadRequestResponse({
+    description: 'Đơn chưa hoàn tất hoặc sản phẩm không thuộc đơn hàng',
+  })
+  @ApiConflictResponse({
+    description: 'Sản phẩm trong đơn hàng này đã được đánh giá',
+  })
   @UseGuards(JwtAuthGuard)
   create(@CurrentUser() user: JwtPayload, @Body() dto: CreateReviewDto) {
     return this.reviewsService.create(user.sub, dto);
@@ -27,6 +43,23 @@ export class ReviewsController {
   @ApiParam({ name: 'productId', type: Number, example: 1, description: 'ID số của sản phẩm' })
   findByProduct(@Param('productId', ParsePositiveIntPipe) productId: number) {
     return this.reviewsService.findByProduct(productId);
+  }
+
+  @Get('product/:productId/summary')
+  @ApiOperation({ summary: '[Public] Lấy điểm đánh giá tổng hợp của sản phẩm' })
+  @ApiParam({ name: 'productId', type: Number, example: 1, description: 'ID số của sản phẩm' })
+  @ApiOkResponse({
+    schema: {
+      example: {
+        productId: 1,
+        averageRating: 4.25,
+        totalReviews: 12,
+        distribution: { 1: 0, 2: 1, 3: 2, 4: 2, 5: 7 },
+      },
+    },
+  })
+  getRatingSummary(@Param('productId', ParsePositiveIntPipe) productId: number) {
+    return this.reviewsService.getRatingSummary(productId);
   }
 
   @Patch(':id')

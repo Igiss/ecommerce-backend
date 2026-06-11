@@ -53,14 +53,11 @@ export class ShippingAddress {
   @Prop({ required: true, trim: true })
   address: string;
 
-  @Prop({ trim: true })
-  ward?: string;
-
-  @Prop({ trim: true })
-  district?: string;
+  @Prop({ required: true, trim: true })
+  ward: string;
 
   @Prop({ required: true, trim: true })
-  city: string;
+  province: string;
 }
 
 export const ShippingAddressSchema = SchemaFactory.createForClass(ShippingAddress);

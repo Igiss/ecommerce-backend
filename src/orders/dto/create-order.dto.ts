@@ -45,19 +45,19 @@ export class ShippingAddressDto {
   @IsString()
   address: string;
 
-  @ApiPropertyOptional({ example: 'Phường Bến Nghé' })
-  @IsOptional()
+  @ApiProperty({
+    example: 'Phường Sài Gòn',
+    description: 'Xã, phường hoặc đặc khu theo đơn vị hành chính mới',
+  })
   @IsString()
-  ward?: string;
+  ward: string;
 
-  @ApiPropertyOptional({ example: 'Quận 1' })
-  @IsOptional()
-  @ApiProperty({ example: 'TP. Hồ Chí Minh' })
+  @ApiProperty({
+    example: 'TP. Hồ Chí Minh',
+    description: 'Tỉnh hoặc thành phố trực thuộc trung ương',
+  })
   @IsString()
-  district?: string;
-
-  @IsString()
-  city: string;
+  province: string;
 }
 
 export class CreateOrderDto {

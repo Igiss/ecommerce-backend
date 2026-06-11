@@ -9,6 +9,7 @@
     "start:dev": "nest start --watch",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
+    "test": "node --require ts-node/register --test src/reports/reports.service.spec.ts",
     "lint": "eslint \"src/**/*.ts\" --fix"
   },
   "dependencies": {

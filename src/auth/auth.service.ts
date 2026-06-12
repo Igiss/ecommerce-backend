@@ -23,7 +23,7 @@ export class AuthService {
 
     return {
       user,
-      accessToken: await this.signToken(String(user.id), user.email, user.role),
+      accessToken: await this.signToken(String(user.id), user.email, user.role, user.status),
     };
   }
 
@@ -71,12 +71,13 @@ export class AuthService {
 
     return {
       user: this.usersService.toPublicUser(user),
-      accessToken: await this.signToken(user.id, user.email, user.role),
+      accessToken: await this.signToken(user.id, user.email, user.role, user.status),
     };
   }
 
   async getProfile(user: JwtPayload) {
-    return this.usersService.findById(user.sub);
+    const currentUser = await this.usersService.findById(user.sub);
+    return this.usersService.toPublicUser(currentUser);
   }
 
   async changePassword(user: JwtPayload, changePasswordDto: ChangePasswordDto) {
@@ -94,12 +95,17 @@ export class AuthService {
   async googleLogin(user: UserDocument) {
     return {
       user: this.usersService.toPublicUser(user),
-      accessToken: await this.signToken(user.id, user.email, user.role),
+      accessToken: await this.signToken(user.id, user.email, user.role, user.status),
     };
   }
 
-  private async signToken(userId: string, email: string, role: JwtPayload['role']) {
-    const payload: JwtPayload = { sub: userId, email, role };
+  private async signToken(
+    userId: string,
+    email: string,
+    role: JwtPayload['role'],
+    status: JwtPayload['status'],
+  ) {
+    const payload: JwtPayload = { sub: userId, email, role, status };
     return this.jwtService.signAsync(payload, {
       secret: this.configService.get<string>('JWT_SECRET') || 'change_this_secret',
       expiresIn: this.configService.get<string>('JWT_EXPIRES_IN') || '7d',

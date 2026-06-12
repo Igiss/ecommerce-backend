@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Patch, Post, Req, Res, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { ConfigService } from '@nestjs/config';
+import { ApiBearerAuth, ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -11,16 +12,25 @@ import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 import { AuthService } from './auth.service';
 import { UserDocument } from '../database/schemas/user.schema';
+import { clearAuthCookie, setAuthCookie } from './auth-cookie';
 
 @ApiTags('Auth')
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly configService: ConfigService,
+  ) {}
 
   @Post('register')
   @ApiOperation({ summary: '[Public] Đăng ký tài khoản user mới' })
-  register(@Body() registerDto: RegisterDto) {
-    return this.authService.register(registerDto);
+  async register(
+    @Body() registerDto: RegisterDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.register(registerDto);
+    setAuthCookie(response, result.accessToken, this.isProduction());
+    return { user: result.user };
   }
 
   @Post('register-owner')
@@ -31,8 +41,13 @@ export class AuthController {
 
   @Post('login')
   @ApiOperation({ summary: '[Public] Đăng nhập và nhận access token' })
-  login(@Body() loginDto: LoginDto) {
-    return this.authService.login(loginDto);
+  async login(
+    @Body() loginDto: LoginDto,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    const result = await this.authService.login(loginDto);
+    setAuthCookie(response, result.accessToken, this.isProduction());
+    return { user: result.user };
   }
 
   @Get('google')
@@ -47,16 +62,15 @@ export class AuthController {
   @UseGuards(GoogleAuthGuard)
   async googleCallback(@Req() request: Request, @Res() response: Response) {
     const result = await this.authService.googleLogin(request.user as UserDocument);
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const params = new URLSearchParams({
-      token: result.accessToken,
-      user: JSON.stringify(result.user),
-    });
-    return response.redirect(`${frontendUrl}/auth/google/callback?${params.toString()}`);
+    setAuthCookie(response, result.accessToken, this.isProduction());
+    const frontendUrl =
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
+    return response.redirect(`${frontendUrl}/auth/google/callback?success=true`);
   }
 
   @Get('profile')
   @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: '[User] Lấy profile tài khoản đang đăng nhập' })
   @UseGuards(JwtAuthGuard)
   getProfile(@CurrentUser() user: JwtPayload) {
@@ -65,9 +79,21 @@ export class AuthController {
 
   @Patch('change-password')
   @ApiBearerAuth()
+  @ApiCookieAuth()
   @ApiOperation({ summary: '[User] Đổi mật khẩu tài khoản đang đăng nhập' })
   @UseGuards(JwtAuthGuard)
   changePassword(@CurrentUser() user: JwtPayload, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(user, dto);
+  }
+
+  @Post('logout')
+  @ApiOperation({ summary: '[Public] Xoa cookie dang nhap' })
+  logout(@Res({ passthrough: true }) response: Response) {
+    clearAuthCookie(response, this.isProduction());
+    return { message: 'Logged out successfully' };
+  }
+
+  private isProduction(): boolean {
+    return this.configService.get<string>('NODE_ENV') === 'production';
   }
 }

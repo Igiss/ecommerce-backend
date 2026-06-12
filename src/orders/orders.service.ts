@@ -1,6 +1,6 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
 import { Role } from '../common/enums/role.enum';
 import { Order, OrderDocument } from '../database/schemas/order.schema';
@@ -47,6 +47,7 @@ export class OrdersService {
         return {
           productId: product._id,
           customDesignId: item.customDesignId ? new Types.ObjectId(item.customDesignId) : undefined,
+          ownerId: product.createdBy,
           productName: product.name,
           productType: product.productType,
           quantity: item.quantity,
@@ -87,7 +88,7 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
 
-    if (role === Role.User && order.userId.toString() !== userId) {
+    if (role !== Role.Admin && order.userId.toString() !== userId) {
       throw new ForbiddenException('You can only view your own orders');
     }
 
@@ -127,5 +128,94 @@ export class OrdersService {
     order.orderStatus = OrderStatus.Cancelled;
     order.cancelReason = cancelReason;
     return order.save();
+  }
+
+  findAllByOwner(ownerId: string) {
+    return this.orderModel.aggregate(this.ownerOrderPipeline(ownerId)).exec();
+  }
+
+  async findOneByOwner(id: string, ownerId: string) {
+    const orders = await this.orderModel
+      .aggregate([
+        {
+          $match: {
+            _id: new Types.ObjectId(id),
+            'items.ownerId': new Types.ObjectId(ownerId),
+          },
+        },
+        ...this.ownerOrderProjection(ownerId),
+      ])
+      .exec();
+
+    if (!orders[0]) {
+      throw new NotFoundException('Order not found');
+    }
+    return orders[0];
+  }
+
+  async updateOwnerFulfillment(
+    id: string,
+    ownerId: string,
+    dto: UpdateOrderStatusDto,
+  ) {
+    const order = await this.orderModel
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(id), 'items.ownerId': new Types.ObjectId(ownerId) },
+        {
+          $set: {
+            'items.$[ownerItem].fulfillmentStatus': dto.orderStatus,
+            'items.$[ownerItem].fulfillmentNote': dto.cancelReason,
+          },
+        },
+        {
+          new: true,
+          arrayFilters: [{ 'ownerItem.ownerId': new Types.ObjectId(ownerId) }],
+        },
+      )
+      .exec();
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return this.findOneByOwner(id, ownerId);
+  }
+
+  private ownerOrderPipeline(ownerId: string): PipelineStage[] {
+    return [
+      { $match: { 'items.ownerId': new Types.ObjectId(ownerId) } },
+      ...this.ownerOrderProjection(ownerId),
+      { $sort: { createdAt: -1 } },
+    ];
+  }
+
+  private ownerOrderProjection(ownerId: string): PipelineStage[] {
+    return [
+      {
+        $project: {
+          userId: 1,
+          shippingAddress: 1,
+          paymentMethod: 1,
+          paymentStatus: 1,
+          orderStatus: 1,
+          note: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          items: {
+            $filter: {
+              input: '$items',
+              as: 'item',
+              cond: {
+                $eq: ['$$item.ownerId', new Types.ObjectId(ownerId)],
+              },
+            },
+          },
+        },
+      },
+      {
+        $set: {
+          ownerTotal: { $sum: '$items.total' },
+        },
+      },
+    ];
   }
 }

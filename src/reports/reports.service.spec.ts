@@ -32,6 +32,7 @@ function createService(productIds: Types.ObjectId[]) {
     {} as never,
     productModel as never,
     orderModel as never,
+    {} as never,
   );
 
   return { service, productFilters, pipelines };

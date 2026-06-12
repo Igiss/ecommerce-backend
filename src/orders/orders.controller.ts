@@ -40,7 +40,7 @@ export class OrdersController {
 
   @Get()
   @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách tất cả đơn hàng' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   findAll() {
     return this.ordersService.findAll();
   }
@@ -57,7 +57,7 @@ export class OrdersController {
   @Patch(':id/status')
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật trạng thái đơn hàng' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của đơn hàng' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   updateStatus(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateOrderStatusDto) {
     return this.ordersService.updateStatus(id, dto);
   }

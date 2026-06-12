@@ -4,6 +4,7 @@ import { CategoriesModule } from '../categories/categories.module';
 import { Product, ProductSchema } from '../database/schemas/product.schema';
 import { Counter, CounterSchema } from '../database/schemas/counter.schema';
 import { ProductsController } from './products.controller';
+import { OwnerProductsController } from './owner-products.controller';
 import { ProductsService } from './products.service';
 
 @Module({
@@ -14,7 +15,7 @@ import { ProductsService } from './products.service';
     ]),
     CategoriesModule,
   ],
-  controllers: [ProductsController],
+  controllers: [ProductsController, OwnerProductsController],
   providers: [ProductsService],
   exports: [ProductsService],
 })

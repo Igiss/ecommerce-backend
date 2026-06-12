@@ -19,7 +19,7 @@ export class NotificationsController {
 
   @Post()
   @ApiOperation({ summary: '[Admin/Owner] Tạo thông báo gửi tới user' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   create(@Body() dto: CreateNotificationDto) {
     return this.notificationsService.create(dto);
   }

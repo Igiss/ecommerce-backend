@@ -21,6 +21,9 @@ export class OrderItem {
   @Prop({ type: Types.ObjectId, ref: 'CustomDesign' })
   customDesignId?: Types.ObjectId;
 
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  ownerId: Types.ObjectId;
+
   @Prop({ required: true, trim: true })
   productName: string;
 
@@ -38,6 +41,12 @@ export class OrderItem {
 
   @Prop()
   image?: string;
+
+  @Prop({ enum: Object.values(OrderStatus), default: OrderStatus.Pending })
+  fulfillmentStatus: OrderStatus;
+
+  @Prop({ trim: true })
+  fulfillmentNote?: string;
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);
@@ -100,6 +109,7 @@ OrderSchema.index({ paymentStatus: 1 });
 OrderSchema.index({ paymentMethod: 1 });
 OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ 'items.productId': 1 });
+OrderSchema.index({ 'items.ownerId': 1, createdAt: -1 });
 OrderSchema.index({ 'items.customDesignId': 1 });
 
 OrderSchema.set('toJSON', {

@@ -30,7 +30,7 @@ export class ProductsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '[Admin/Owner] Tạo sản phẩm mới' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   @ApiCreatedResponse({ description: 'Sản phẩm đã được tạo với ID số tuần tự' })
   create(@Body() dto: CreateProductDto, @CurrentUser() user: JwtPayload) {
     return this.productsService.create(dto, user.sub);
@@ -81,7 +81,7 @@ export class ProductsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật sản phẩm' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   @ApiParam({ name: 'id', type: Number, example: 1, description: 'ID số của sản phẩm' })
   @ApiBadRequestResponse({ description: 'ID phải là số nguyên dương' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy sản phẩm' })
@@ -93,7 +93,7 @@ export class ProductsController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '[Admin/Owner] Xóa mềm sản phẩm' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   @ApiParam({ name: 'id', type: Number, example: 1, description: 'ID số của sản phẩm' })
   @ApiBadRequestResponse({ description: 'ID phải là số nguyên dương' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy sản phẩm' })

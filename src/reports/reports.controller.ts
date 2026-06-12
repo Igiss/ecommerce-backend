@@ -13,7 +13,7 @@ import { ReportDateQueryDto } from './dto/report-date-query.dto';
 @ApiTags('Reports')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.Admin, Role.Owner)
+@Roles(Role.Admin)
 @Controller('reports')
 export class ReportsController {
   constructor(private readonly reportsService: ReportsService) {}

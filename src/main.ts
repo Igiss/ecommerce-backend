@@ -11,7 +11,14 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
-  app.enableCors();
+  const frontendUrl = configService.get<string>('FRONTEND_URL');
+  if (!frontendUrl) {
+    throw new Error('FRONTEND_URL is required');
+  }
+  app.enableCors({
+    origin: frontendUrl,
+    credentials: true,
+  });
   app.useStaticAssets(join(process.cwd(), 'uploads'), {
     prefix: '/uploads/',
   });
@@ -27,6 +34,7 @@ async function bootstrap() {
     .setTitle('Ecommerce Backend API')
     .setDescription('NestJS + MongoDB ecommerce backend')
     .setVersion('1.0')
+    .addCookieAuth('access_token')
     .addBearerAuth()
     .build();
   const document = SwaggerModule.createDocument(app, swaggerConfig);

@@ -61,6 +61,29 @@ export class ProductsService implements OnModuleInit {
     };
   }
 
+  async findAllByOwner(ownerId: string, query: ProductQueryDto) {
+    const { page, limit, skip } = getPagination(query);
+    const filter = {
+      ...this.buildFilter(query),
+      createdBy: new Types.ObjectId(ownerId),
+    };
+    const sortField = query.sortBy || 'createdAt';
+    const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
+
+    const [items, total] = await Promise.all([
+      this.productModel
+        .find(filter)
+        .populate('categoryId', 'name slug')
+        .sort({ [sortField]: sortOrder })
+        .skip(skip)
+        .limit(limit)
+        .exec(),
+      this.productModel.countDocuments(filter).exec(),
+    ]);
+
+    return { items, meta: buildPaginationMeta(total, page, limit) };
+  }
+
   async findOne(id: number) {
     const product = await this.productModel
       .findOne({ productId: id, status: { $ne: ProductStatus.Deleted } })
@@ -102,9 +125,58 @@ export class ProductsService implements OnModuleInit {
     return updatedProduct;
   }
 
+  async updateByOwner(id: number, ownerId: string, updateProductDto: UpdateProductDto) {
+    const product = await this.productModel
+      .findOne({
+        productId: id,
+        createdBy: new Types.ObjectId(ownerId),
+        status: { $ne: ProductStatus.Deleted },
+      })
+      .exec();
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    if (updateProductDto.categoryId) {
+      await this.categoriesService.findOne(updateProductDto.categoryId);
+    }
+
+    const slugSource = updateProductDto.slug || updateProductDto.name;
+    if (slugSource) {
+      const slug = createSlug(slugSource);
+      await this.ensureSlugAvailable(slug, product._id.toString());
+      updateProductDto.slug = slug;
+    }
+
+    return this.productModel
+      .findOneAndUpdate(
+        { _id: product._id, createdBy: new Types.ObjectId(ownerId) },
+        updateProductDto,
+        { new: true },
+      )
+      .populate('categoryId', 'name slug')
+      .exec();
+  }
+
   async remove(id: number) {
     const product = await this.productModel
       .findOneAndUpdate({ productId: id }, { status: ProductStatus.Deleted }, { new: true })
+      .exec();
+
+    if (!product) {
+      throw new NotFoundException('Product not found');
+    }
+
+    return product;
+  }
+
+  async removeByOwner(id: number, ownerId: string) {
+    const product = await this.productModel
+      .findOneAndUpdate(
+        { productId: id, createdBy: new Types.ObjectId(ownerId) },
+        { status: ProductStatus.Deleted },
+        { new: true },
+      )
       .exec();
 
     if (!product) {

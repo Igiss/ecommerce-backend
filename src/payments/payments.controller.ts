@@ -33,7 +33,7 @@ export class PaymentsController {
 
   @Get()
   @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách tất cả payment' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   findAll() {
     return this.paymentsService.findAll();
   }
@@ -42,7 +42,7 @@ export class PaymentsController {
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật trạng thái payment mock' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của payment' })
   @ApiBadRequestResponse({ description: 'ID payment không hợp lệ' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   updateStatus(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdatePaymentStatusDto) {
     return this.paymentsService.updateStatus(id, dto);
   }

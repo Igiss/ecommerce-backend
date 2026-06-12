@@ -11,6 +11,8 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
+import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
@@ -58,7 +60,7 @@ export class CouponsController {
   @Get()
   @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách coupon' })
   @ApiOkResponse({ description: 'Danh sách coupon, mới nhất trước' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   findAll() {
     return this.couponsService.findAll();
   }
@@ -67,9 +69,9 @@ export class CouponsController {
   @ApiOperation({ summary: '[Admin/Owner] Tạo coupon mới' })
   @ApiCreatedResponse({ description: 'Coupon đã được tạo' })
   @ApiBadRequestResponse({ description: 'Mã đã tồn tại hoặc giá trị giảm không hợp lệ' })
-  @Roles(Role.Admin, Role.Owner)
-  create(@Body() dto: CreateCouponDto) {
-    return this.couponsService.create(dto);
+  @Roles(Role.Admin)
+  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateCouponDto) {
+    return this.couponsService.create(dto, user.sub);
   }
 
   @Patch(':id')
@@ -78,7 +80,7 @@ export class CouponsController {
   @ApiOkResponse({ description: 'Coupon sau khi cập nhật' })
   @ApiBadRequestResponse({ description: 'ID hoặc dữ liệu cập nhật không hợp lệ' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy coupon' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   update(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateCouponDto) {
     return this.couponsService.update(id, dto);
   }
@@ -89,7 +91,7 @@ export class CouponsController {
   @ApiOkResponse({ description: 'Coupon đã được xóa' })
   @ApiBadRequestResponse({ description: 'ID coupon không hợp lệ' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy coupon' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   remove(@Param('id', ParseMongoIdPipe) id: string) {
     return this.couponsService.remove(id);
   }

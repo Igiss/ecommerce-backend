@@ -32,7 +32,7 @@ export class CustomDesignsController {
 
   @Get()
   @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách tất cả yêu cầu custom' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   findAll() {
     return this.customDesignsService.findAll();
   }
@@ -48,7 +48,7 @@ export class CustomDesignsController {
   @Patch(':id/status')
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật trạng thái yêu cầu custom và ghi chú admin' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của yêu cầu custom' })
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   updateStatus(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateCustomDesignStatusDto) {
     return this.customDesignsService.updateStatus(id, dto);
   }

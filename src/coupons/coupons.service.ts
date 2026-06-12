@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { Coupon, CouponDocument, DiscountType } from '../database/schemas/coupon.schema';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
@@ -35,13 +35,17 @@ export class CouponsService {
     return this.couponModel.find().sort({ createdAt: -1 }).exec();
   }
 
-  async create(dto: CreateCouponDto) {
+  async create(dto: CreateCouponDto, ownerId?: string) {
     this.validateDiscount(dto.discountType, dto.discountAmount);
     const code = this.normalizeCode(dto.code);
     if (await this.couponModel.exists({ code })) {
       throw new BadRequestException('Coupon code already exists');
     }
-    return this.couponModel.create({ ...dto, code });
+    return this.couponModel.create({
+      ...dto,
+      code,
+      ownerId: ownerId ? new Types.ObjectId(ownerId) : undefined,
+    });
   }
 
   async update(id: string, dto: UpdateCouponDto) {
@@ -58,6 +62,44 @@ export class CouponsService {
 
   async remove(id: string) {
     const coupon = await this.couponModel.findByIdAndDelete(id).exec();
+    if (!coupon) {
+      throw new NotFoundException('Coupon not found');
+    }
+    return { message: 'Coupon deleted successfully' };
+  }
+
+  findAllByOwner(ownerId: string) {
+    return this.couponModel
+      .find({ ownerId: new Types.ObjectId(ownerId) })
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
+  async updateByOwner(id: string, ownerId: string, dto: UpdateCouponDto) {
+    if (dto.discountType && dto.discountAmount !== undefined) {
+      this.validateDiscount(dto.discountType, dto.discountAmount);
+    }
+    const update = { ...dto, code: dto.code ? this.normalizeCode(dto.code) : undefined };
+    const coupon = await this.couponModel
+      .findOneAndUpdate(
+        { _id: new Types.ObjectId(id), ownerId: new Types.ObjectId(ownerId) },
+        update,
+        { new: true },
+      )
+      .exec();
+    if (!coupon) {
+      throw new NotFoundException('Coupon not found');
+    }
+    return coupon;
+  }
+
+  async removeByOwner(id: string, ownerId: string) {
+    const coupon = await this.couponModel
+      .findOneAndDelete({
+        _id: new Types.ObjectId(id),
+        ownerId: new Types.ObjectId(ownerId),
+      })
+      .exec();
     if (!coupon) {
       throw new NotFoundException('Coupon not found');
     }
@@ -83,4 +125,3 @@ export class CouponsService {
     return code.trim().toUpperCase();
   }
 }
-

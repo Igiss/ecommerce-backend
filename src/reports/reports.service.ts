@@ -4,6 +4,7 @@ import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
 import { Order, OrderDocument } from '../database/schemas/order.schema';
 import { Product, ProductDocument } from '../database/schemas/product.schema';
+import { Coupon, CouponDocument } from '../database/schemas/coupon.schema';
 import { User, UserDocument } from '../database/schemas/user.schema';
 import { ReportDateQueryDto } from './dto/report-date-query.dto';
 
@@ -20,7 +21,62 @@ export class ReportsService {
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
+    @InjectModel(Coupon.name) private readonly couponModel: Model<CouponDocument>,
   ) {}
+
+  async getOwnerDashboard(ownerId: string) {
+    const ownerObjectId = new Types.ObjectId(ownerId);
+    const [orderSummary, productCount, couponCount] = await Promise.all([
+      this.orderModel
+        .aggregate<{
+          orderCount: number;
+          revenue: number;
+          itemCount: number;
+        }>([
+          { $match: { 'items.ownerId': ownerObjectId } },
+          { $unwind: '$items' },
+          { $match: { 'items.ownerId': ownerObjectId } },
+          {
+            $group: {
+              _id: null,
+              orderIds: { $addToSet: '$_id' },
+              revenue: {
+                $sum: {
+                  $cond: [
+                    { $eq: ['$items.fulfillmentStatus', OrderStatus.Completed] },
+                    '$items.total',
+                    0,
+                  ],
+                },
+              },
+              itemCount: { $sum: '$items.quantity' },
+            },
+          },
+          {
+            $project: {
+              _id: 0,
+              orderCount: { $size: '$orderIds' },
+              revenue: 1,
+              itemCount: 1,
+            },
+          },
+        ])
+        .exec(),
+      this.productModel
+        .countDocuments({
+          createdBy: ownerObjectId,
+          status: { $ne: 'deleted' },
+        })
+        .exec(),
+      this.couponModel.countDocuments({ ownerId: ownerObjectId }).exec(),
+    ]);
+
+    return {
+      ...(orderSummary[0] || { orderCount: 0, revenue: 0, itemCount: 0 }),
+      productCount,
+      couponCount,
+    };
+  }
 
   async getOverview(ownerId?: string, query: ReportDateQueryDto = {}) {
     const orderDateFilter = this.buildOrderDateFilter(query);

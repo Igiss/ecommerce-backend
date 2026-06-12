@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 
 export type CouponDocument = HydratedDocument<Coupon>;
 
@@ -10,6 +10,9 @@ export enum DiscountType {
 
 @Schema({ timestamps: true })
 export class Coupon {
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  ownerId?: Types.ObjectId;
+
   @Prop({ required: true, unique: true, uppercase: true, trim: true })
   code: string;
 
@@ -42,4 +45,4 @@ export const CouponSchema = SchemaFactory.createForClass(Coupon);
 
 CouponSchema.index({ code: 1 }, { unique: true });
 CouponSchema.index({ isActive: 1, expiryDate: 1 });
-
+CouponSchema.index({ ownerId: 1, createdAt: -1 });

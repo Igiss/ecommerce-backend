@@ -26,7 +26,7 @@ export class CategoriesController {
   @ApiBearerAuth()
   @ApiOperation({ summary: '[Admin/Owner] Tạo danh mục sản phẩm' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   create(@Body() dto: CreateCategoryDto) {
     return this.categoriesService.create(dto);
   }
@@ -52,7 +52,7 @@ export class CategoriesController {
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật danh mục sản phẩm' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của danh mục' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   update(@Param('id', ParseMongoIdPipe) id: string, @Body() dto: UpdateCategoryDto) {
     return this.categoriesService.update(id, dto);
   }
@@ -62,7 +62,7 @@ export class CategoriesController {
   @ApiOperation({ summary: '[Admin/Owner] Vô hiệu hóa danh mục sản phẩm' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của danh mục' })
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.Admin, Role.Owner)
+  @Roles(Role.Admin)
   remove(@Param('id', ParseMongoIdPipe) id: string) {
     return this.categoriesService.remove(id);
   }

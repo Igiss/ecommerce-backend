@@ -4,6 +4,7 @@ import { CustomDesign, CustomDesignSchema } from '../database/schemas/custom-des
 import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Product, ProductSchema } from '../database/schemas/product.schema';
 import { OrdersController } from './orders.controller';
+import { OwnerOrdersController } from './owner-orders.controller';
 import { OrdersService } from './orders.service';
 
 @Module({
@@ -14,7 +15,7 @@ import { OrdersService } from './orders.service';
       { name: CustomDesign.name, schema: CustomDesignSchema },
     ]),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, OwnerOrdersController],
   providers: [OrdersService],
   exports: [OrdersService],
 })

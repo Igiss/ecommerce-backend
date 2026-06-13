@@ -13,11 +13,18 @@ export function assertSeederAllowed(nodeEnv: string | undefined): void {
   }
 }
 
+export function assertDatabaseUriConfigured(
+  mongodbUri: string | undefined,
+  mongoUri: string | undefined,
+): void {
+  if (!mongodbUri && !mongoUri) {
+    throw new Error('MONGODB_URI or MONGO_URI is required');
+  }
+}
+
 export async function runSeeder(argv = process.argv.slice(2)): Promise<void> {
   assertSeederAllowed(process.env.NODE_ENV);
-  if (!process.env.MONGODB_URI) {
-    throw new Error('MONGODB_URI is required');
-  }
+  assertDatabaseUriConfigured(process.env.MONGODB_URI, process.env.MONGO_URI);
 
   const app = await NestFactory.createApplicationContext(AppModule, {
     logger: ['error', 'warn', 'log'],

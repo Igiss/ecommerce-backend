@@ -7,10 +7,41 @@ import {
   IsOptional,
   IsString,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ProductStatus, ProductType } from '../../database/schemas/product.schema';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+
+export class ProductVariantDto {
+  @ApiPropertyOptional({ example: 'white' })
+  @IsOptional()
+  @IsString()
+  color?: string;
+
+  @ApiPropertyOptional({ example: '350ml' })
+  @IsOptional()
+  @IsString()
+  size?: string;
+
+  @ApiPropertyOptional({ example: 'ceramic' })
+  @IsOptional()
+  @IsString()
+  material?: string;
+
+  @ApiPropertyOptional({ example: 150000, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @ApiProperty({ example: 20, minimum: 0 })
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  stock: number;
+}
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Cốc sứ trắng' })
@@ -35,11 +66,17 @@ export class CreateProductDto {
 
   @ApiPropertyOptional({ example: 120000, minimum: 0 })
   @IsOptional()
-  @ApiProperty({ example: 50, minimum: 0 })
   @Type(() => Number)
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  @ApiPropertyOptional({ example: 80000, minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  costPrice?: number;
 
   @Type(() => Number)
   @IsNumber()
@@ -50,12 +87,18 @@ export class CreateProductDto {
   @IsMongoId()
   categoryId: string;
 
-  @ApiPropertyOptional({ type: [String], maxItems: 10, example: ['https://example.com/cup.jpg'] })
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: 10,
+    example: ['665f08d2de3f6c0cb82a4581'],
+    description:
+      'Tối đa 10 Upload ID loại `product_image` đã hoàn tất. Upload phải thuộc Admin/Owner đang tạo hoặc cập nhật sản phẩm; không gửi URL Cloudinary trực tiếp.',
+  })
   @IsOptional()
   @IsArray()
   @ArrayMaxSize(10)
-  @IsString({ each: true })
-  images?: string[];
+  @IsMongoId({ each: true })
+  imageUploadIds?: string[];
 
   @ApiPropertyOptional({ example: 'Cup Store' })
   @IsOptional()
@@ -83,6 +126,13 @@ export class CreateProductDto {
   @IsArray()
   @IsString({ each: true })
   size?: string[];
+
+  @ApiPropertyOptional({ type: [ProductVariantDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ProductVariantDto)
+  variants?: ProductVariantDto[];
 
   @ApiPropertyOptional({ enum: [ProductStatus.Active, ProductStatus.Inactive] })
   @IsOptional()

@@ -69,6 +69,8 @@ export class AuthService {
       throw new UnauthorizedException('User account is locked');
     }
 
+    await this.usersService.recordLogin(user.id);
+
     return {
       user: this.usersService.toPublicUser(user),
       accessToken: await this.signToken(user.id, user.email, user.role, user.status),

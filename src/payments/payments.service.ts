@@ -1,12 +1,11 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model, Types } from 'mongoose';
+import { Model } from 'mongoose';
 import { ReturnQueryFromVNPay, VNPay, VnpLocale } from 'vnpay';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Order, OrderDocument, PaymentMethod } from '../database/schemas/order.schema';
 import { Payment, PaymentDocument } from '../database/schemas/payment.schema';
-import { CreatePaymentDto } from './dto/create-payment.dto';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
 
 @Injectable()
@@ -16,30 +15,6 @@ export class PaymentsService {
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     private readonly configService: ConfigService,
   ) {}
-
-  async create(userId: string, dto: CreatePaymentDto) {
-    const order = await this.orderModel.findById(dto.orderId).exec();
-    if (!order) {
-      throw new NotFoundException('Order not found');
-    }
-
-    const status = dto.status || PaymentStatus.Unpaid;
-    const payment = await this.paymentModel.create({
-      orderId: new Types.ObjectId(dto.orderId),
-      userId: new Types.ObjectId(userId),
-      method: dto.method,
-      amount: dto.amount,
-      status,
-      transactionCode: dto.transactionCode,
-      paidAt: status === PaymentStatus.Paid ? new Date() : undefined,
-    });
-
-    order.paymentMethod = dto.method;
-    order.paymentStatus = status;
-    await order.save();
-
-    return payment;
-  }
 
   async findAll() {
     return this.paymentModel
@@ -55,13 +30,27 @@ export class PaymentsService {
   }
 
   async updateStatus(id: string, dto: UpdatePaymentStatusDto) {
+    const existingPayment = await this.paymentModel.findById(id).exec();
+    if (!existingPayment) {
+      throw new NotFoundException('Payment not found');
+    }
+
+    const paidAt =
+      dto.status === PaymentStatus.Paid
+        ? existingPayment.paidAt || new Date()
+        : existingPayment.paidAt;
+    const refundedAt = dto.status === PaymentStatus.Refunded ? new Date() : undefined;
     const payment = await this.paymentModel
       .findByIdAndUpdate(
         id,
         {
           status: dto.status,
           transactionCode: dto.transactionCode,
-          paidAt: dto.status === PaymentStatus.Paid ? new Date() : undefined,
+          providerTransactionId: dto.providerTransactionId,
+          failureReason: dto.failureReason,
+          paidAt,
+          refundedAt,
+          refundAmount: dto.refundAmount || 0,
         },
         { new: true },
       )
@@ -71,7 +60,13 @@ export class PaymentsService {
       throw new NotFoundException('Payment not found');
     }
 
-    await this.orderModel.findByIdAndUpdate(payment.orderId, { paymentStatus: dto.status }).exec();
+    await this.orderModel
+      .findByIdAndUpdate(payment.orderId, {
+        paymentStatus: dto.status,
+        paidAt,
+        transactionCode: dto.transactionCode || payment.transactionCode,
+      })
+      .exec();
 
     return payment;
   }
@@ -97,6 +92,7 @@ export class PaymentsService {
     });
 
     order.paymentMethod = PaymentMethod.VNPay;
+    order.transactionCode = transactionCode;
     await order.save();
 
     const paymentUrl = this.getVnpay().buildPaymentUrl({
@@ -121,6 +117,8 @@ export class PaymentsService {
 
     if (success) {
       await this.confirmVnpayPayment(orderId, transactionCode, query);
+    } else if (orderId) {
+      await this.markVnpayFailed(transactionCode, query);
     }
 
     return {
@@ -177,16 +175,47 @@ export class PaymentsService {
     metadata: Record<string, string>,
   ) {
     const paidAt = new Date();
+    const providerTransactionId = metadata.vnp_TransactionNo;
     await Promise.all([
       this.orderModel.findByIdAndUpdate(orderId, {
         paymentMethod: PaymentMethod.VNPay,
         paymentStatus: PaymentStatus.Paid,
+        paidAt,
+        transactionCode,
       }),
       this.paymentModel.findOneAndUpdate(
         { transactionCode },
-        { status: PaymentStatus.Paid, paidAt, metadata },
+        {
+          status: PaymentStatus.Paid,
+          paidAt,
+          providerTransactionId,
+          failureReason: undefined,
+          metadata,
+        },
       ),
     ]);
+  }
+
+  private async markVnpayFailed(
+    transactionCode: string,
+    metadata: Record<string, string>,
+  ) {
+    const payment = await this.paymentModel.findOneAndUpdate(
+      { transactionCode },
+      {
+        status: PaymentStatus.Failed,
+        failureReason: metadata.vnp_ResponseCode || 'VNPay payment failed',
+        providerTransactionId: metadata.vnp_TransactionNo,
+        metadata,
+      },
+      { new: true },
+    );
+    if (payment) {
+      await this.orderModel.findByIdAndUpdate(payment.orderId, {
+        paymentStatus: PaymentStatus.Failed,
+        transactionCode,
+      });
+    }
   }
 
   private getVnpay() {

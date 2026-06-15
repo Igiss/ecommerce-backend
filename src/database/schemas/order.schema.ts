@@ -82,6 +82,21 @@ export class Order {
   @Prop({ required: true, min: 0 })
   totalAmount: number;
 
+  @Prop({ required: true, min: 0, default: 0 })
+  subtotal: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  shippingFee: number;
+
+  @Prop({ required: true, min: 0, default: 0 })
+  discountAmount: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'Coupon' })
+  couponId?: Types.ObjectId;
+
+  @Prop({ trim: true, uppercase: true })
+  couponCode?: string;
+
   @Prop({ type: ShippingAddressSchema, required: true })
   shippingAddress: ShippingAddress;
 
@@ -91,6 +106,12 @@ export class Order {
   @Prop({ enum: Object.values(PaymentStatus), default: PaymentStatus.Unpaid })
   paymentStatus: PaymentStatus;
 
+  @Prop()
+  paidAt?: Date;
+
+  @Prop({ trim: true })
+  transactionCode?: string;
+
   @Prop({ enum: Object.values(OrderStatus), default: OrderStatus.Pending })
   orderStatus: OrderStatus;
 
@@ -99,6 +120,21 @@ export class Order {
 
   @Prop({ trim: true })
   cancelReason?: string;
+
+  @Prop()
+  cancelledAt?: Date;
+
+  @Prop()
+  shippedAt?: Date;
+
+  @Prop()
+  completedAt?: Date;
+
+  @Prop({ trim: true })
+  trackingCode?: string;
+
+  @Prop({ trim: true })
+  shippingProvider?: string;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);

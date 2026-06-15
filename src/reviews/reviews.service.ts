@@ -14,6 +14,9 @@ import { Product, ProductDocument } from '../database/schemas/product.schema';
 import { Review, ReviewDocument, ReviewStatus } from '../database/schemas/review.schema';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
+import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
+import { UploadService } from '../upload/upload.service';
+import { ModerateReviewDto } from './dto/moderate-review.dto';
 
 @Injectable()
 export class ReviewsService {
@@ -21,6 +24,7 @@ export class ReviewsService {
     @InjectModel(Review.name) private readonly reviewModel: Model<ReviewDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
+    private readonly uploadService: UploadService,
   ) {}
 
   async create(userId: string, dto: CreateReviewDto) {
@@ -59,9 +63,23 @@ export class ReviewsService {
       throw new ConflictException('This product has already been reviewed for this order');
     }
 
+    const reviewObjectId = new Types.ObjectId();
+    const { imageUploadIds, ...reviewData } = dto;
+    const images = imageUploadIds
+      ? await this.uploadService.attachUploads(
+          userId,
+          imageUploadIds,
+          UploadType.ReviewImage,
+          UploadTargetType.Review,
+          reviewObjectId,
+        )
+      : [];
+
     try {
       return await this.reviewModel.create({
-        ...dto,
+        _id: reviewObjectId,
+        ...reviewData,
+        images,
         userId: new Types.ObjectId(userId),
         productId: product._id,
         orderId: order._id,
@@ -154,7 +172,17 @@ export class ReviewsService {
       throw new ForbiddenException('You can only update your own review');
     }
 
-    Object.assign(review, dto);
+    const { imageUploadIds, ...reviewData } = dto;
+    Object.assign(review, reviewData);
+    if (imageUploadIds) {
+      review.images = await this.uploadService.attachUploads(
+        userId,
+        imageUploadIds,
+        UploadType.ReviewImage,
+        UploadTargetType.Review,
+        review._id,
+      );
+    }
     return review.save();
   }
 
@@ -164,11 +192,35 @@ export class ReviewsService {
       throw new NotFoundException('Review not found');
     }
 
-    if (role === Role.User && review.userId.toString() !== userId) {
+    if (role !== Role.Admin && review.userId.toString() !== userId) {
       throw new ForbiddenException('You can only delete your own review');
     }
 
     review.status = ReviewStatus.Deleted;
+    if (role === Role.Admin) {
+      review.moderatedAt = new Date();
+      review.moderatedBy = new Types.ObjectId(userId);
+      review.moderationReason = 'Deleted by administrator';
+    }
     return review.save();
+  }
+
+  async moderate(id: string, moderatorId: string, dto: ModerateReviewDto) {
+    const review = await this.reviewModel
+      .findByIdAndUpdate(
+        id,
+        {
+          status: dto.status,
+          moderationReason: dto.moderationReason,
+          moderatedAt: new Date(),
+          moderatedBy: new Types.ObjectId(moderatorId),
+        },
+        { new: true },
+      )
+      .exec();
+    if (!review) {
+      throw new NotFoundException('Review not found');
+    }
+    return review;
   }
 }

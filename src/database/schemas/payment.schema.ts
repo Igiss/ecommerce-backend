@@ -25,8 +25,20 @@ export class Payment {
   @Prop({ trim: true })
   transactionCode?: string;
 
+  @Prop({ trim: true })
+  providerTransactionId?: string;
+
   @Prop()
   paidAt?: Date;
+
+  @Prop({ trim: true })
+  failureReason?: string;
+
+  @Prop()
+  refundedAt?: Date;
+
+  @Prop({ min: 0, default: 0 })
+  refundAmount: number;
 
   @Prop({ type: Object, default: {} })
   metadata: Record<string, unknown>;
@@ -38,7 +50,7 @@ PaymentSchema.index({ orderId: 1 });
 PaymentSchema.index({ userId: 1 });
 PaymentSchema.index({ status: 1 });
 PaymentSchema.index({ method: 1 });
-PaymentSchema.index({ transactionCode: 1 }, { sparse: true });
+PaymentSchema.index({ transactionCode: 1 }, { unique: true, sparse: true });
 PaymentSchema.index({ createdAt: -1 });
 
 PaymentSchema.set('toJSON', {

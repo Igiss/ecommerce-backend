@@ -31,6 +31,9 @@ export class Coupon {
   @Prop({ required: true })
   expiryDate: Date;
 
+  @Prop()
+  startsAt?: Date;
+
   @Prop({ default: true })
   isActive: boolean;
 
@@ -39,10 +42,18 @@ export class Coupon {
 
   @Prop({ default: 0, min: 0 })
   usedCount: number;
+
+  @Prop({ default: 1, min: 1 })
+  perUserLimit: number;
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Product' }], default: [] })
+  applicableProductIds: Types.ObjectId[];
+
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'Category' }], default: [] })
+  applicableCategoryIds: Types.ObjectId[];
 }
 
 export const CouponSchema = SchemaFactory.createForClass(Coupon);
 
-CouponSchema.index({ code: 1 }, { unique: true });
 CouponSchema.index({ isActive: 1, expiryDate: 1 });
 CouponSchema.index({ ownerId: 1, createdAt: -1 });

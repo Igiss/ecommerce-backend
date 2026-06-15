@@ -2,18 +2,23 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { User, UserDocument } from '../database/schemas/user.schema';
+import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
+import { UploadService } from '../upload/upload.service';
 
 type PublicUser = User & { id?: string };
 
 @Injectable()
 export class UsersService {
-  constructor(@InjectModel(User.name) private readonly userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    private readonly uploadService: UploadService,
+  ) {}
 
   async create(createUserDto: CreateUserDto): Promise<PublicUser> {
     const user = await this.userModel.create(createUserDto);
@@ -53,12 +58,17 @@ export class UsersService {
   }) {
     let user = await this.userModel.findOne({ googleId: profile.googleId }).exec();
     if (user) {
+      if (!user.emailVerifiedAt) {
+        user.emailVerifiedAt = new Date();
+        await user.save();
+      }
       return user;
     }
 
     user = await this.userModel.findOne({ email: profile.email.toLowerCase() }).exec();
     if (user) {
       user.googleId = profile.googleId;
+      user.emailVerifiedAt = user.emailVerifiedAt || new Date();
       if (!user.avatar && profile.avatar) {
         user.avatar = profile.avatar;
       }
@@ -70,12 +80,26 @@ export class UsersService {
       ...profile,
       email: profile.email.toLowerCase(),
       password,
+      emailVerifiedAt: new Date(),
     });
   }
 
   async updateProfile(id: string, updateProfileDto: UpdateProfileDto) {
+    const { avatarUploadId, ...profileFields } = updateProfileDto;
+    const profileData: Record<string, unknown> = profileFields;
+    if (avatarUploadId) {
+      const [avatar] = await this.uploadService.attachUploads(
+        id,
+        [avatarUploadId],
+        UploadType.Avatar,
+        UploadTargetType.User,
+        new Types.ObjectId(id),
+      );
+      profileData.avatar = avatar;
+    }
+
     const user = await this.userModel
-      .findByIdAndUpdate(id, updateProfileDto, { new: true })
+      .findByIdAndUpdate(id, profileData, { new: true })
       .exec();
 
     if (!user) {
@@ -86,8 +110,21 @@ export class UsersService {
   }
 
   async updateStatus(id: string, updateUserStatusDto: UpdateUserStatusDto) {
+    const isBlocked = updateUserStatusDto.status === 'blocked';
+    const update = isBlocked
+      ? {
+          $set: {
+            status: updateUserStatusDto.status,
+            blockedAt: new Date(),
+            blockedReason: updateUserStatusDto.blockedReason,
+          },
+        }
+      : {
+          $set: { status: updateUserStatusDto.status },
+          $unset: { blockedAt: 1, blockedReason: 1 },
+        };
     const user = await this.userModel
-      .findByIdAndUpdate(id, { status: updateUserStatusDto.status }, { new: true })
+      .findByIdAndUpdate(id, update, { new: true })
       .exec();
 
     if (!user) {
@@ -116,6 +153,10 @@ export class UsersService {
     }
 
     return true;
+  }
+
+  async recordLogin(id: string) {
+    await this.userModel.updateOne({ _id: id }, { lastLoginAt: new Date() }).exec();
   }
 
   toPublicUser(user: UserDocument | User): PublicUser {

@@ -9,13 +9,17 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/enums/role.enum';
 import { CreateReviewDto } from './dto/create-review.dto';
 import { UpdateReviewDto } from './dto/update-review.dto';
 import { ParsePositiveIntPipe } from '../common/pipes/parse-positive-int.pipe';
 import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import { ReviewsService } from './reviews.service';
+import { ModerateReviewDto } from './dto/moderate-review.dto';
 
 @ApiTags('Reviews')
 @Controller('reviews')
@@ -60,6 +64,19 @@ export class ReviewsController {
   })
   getRatingSummary(@Param('productId', ParsePositiveIntPipe) productId: number) {
     return this.reviewsService.getRatingSummary(productId);
+  }
+
+  @Patch(':id/moderation')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[Admin] Kiểm duyệt và ẩn/hiện review' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  moderate(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseMongoIdPipe) id: string,
+    @Body() dto: ModerateReviewDto,
+  ) {
+    return this.reviewsService.moderate(id, user.sub, dto);
   }
 
   @Patch(':id')

@@ -60,6 +60,26 @@ export class ProductCustomOptions {
 
 export const ProductCustomOptionsSchema = SchemaFactory.createForClass(ProductCustomOptions);
 
+@Schema({ _id: false })
+export class ProductVariant {
+  @Prop({ trim: true })
+  color?: string;
+
+  @Prop({ trim: true })
+  size?: string;
+
+  @Prop({ trim: true })
+  material?: string;
+
+  @Prop({ min: 0 })
+  price?: number;
+
+  @Prop({ min: 0, default: 0 })
+  stock: number;
+}
+
+export const ProductVariantSchema = SchemaFactory.createForClass(ProductVariant);
+
 @Schema({ timestamps: true })
 export class Product {
   @Prop({ type: Number, min: 1 })
@@ -87,8 +107,14 @@ export class Product {
   @Prop({ min: 0 })
   salePrice?: number;
 
+  @Prop({ min: 0, select: false })
+  costPrice?: number;
+
   @Prop({ required: true, min: 0, default: 0 })
   stock: number;
+
+  @Prop({ min: 0, default: 0 })
+  soldCount: number;
 
   @Prop({ type: Types.ObjectId, ref: 'Category', required: true })
   categoryId: Types.ObjectId;
@@ -120,8 +146,14 @@ export class Product {
   @Prop({ type: ProductCustomOptionsSchema, default: {} })
   customOptions: ProductCustomOptions;
 
+  @Prop({ type: [ProductVariantSchema], default: [] })
+  variants: ProductVariant[];
+
   @Prop({ enum: Object.values(ProductStatus), default: ProductStatus.Active })
   status: ProductStatus;
+
+  @Prop()
+  deletedAt?: Date;
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy: Types.ObjectId;
@@ -131,12 +163,12 @@ export const ProductSchema = SchemaFactory.createForClass(Product);
 
 ProductSchema.index({ name: 'text', description: 'text', brand: 'text' });
 ProductSchema.index({ productId: 1 }, { unique: true, sparse: true });
-ProductSchema.index({ slug: 1 }, { unique: true });
 ProductSchema.index({ productType: 1 });
 ProductSchema.index({ categoryId: 1 });
 ProductSchema.index({ status: 1 });
 ProductSchema.index({ price: 1 });
 ProductSchema.index({ createdBy: 1 });
+ProductSchema.index({ soldCount: -1 });
 
 ProductSchema.set('toJSON', {
   virtuals: true,
@@ -146,6 +178,7 @@ ProductSchema.set('toJSON', {
     transformed.id = transformed.productId;
     delete transformed._id;
     delete transformed.productId;
+    delete transformed.costPrice;
     return ret;
   },
 });

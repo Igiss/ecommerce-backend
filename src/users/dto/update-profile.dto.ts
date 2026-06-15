@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator';
+import { IsMongoId, IsOptional, IsString } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { IsVietnamPhone } from '../../common/decorators/is-vietnam-phone.decorator';
 
@@ -13,10 +13,14 @@ export class UpdateProfileDto {
   @IsVietnamPhone()
   phone?: string;
 
-  @ApiPropertyOptional({ example: 'https://example.com/avatar.jpg' })
+  @ApiPropertyOptional({
+    example: '665f08d2de3f6c0cb82a4581',
+    description:
+      'Upload ID loại `avatar` đã hoàn tất và thuộc user đang đăng nhập; không gửi URL trực tiếp.',
+  })
   @IsOptional()
-  @IsString()
-  avatar?: string;
+  @IsMongoId()
+  avatarUploadId?: string;
 
   @ApiPropertyOptional({ example: '12 Nguyễn Huệ, TP.HCM' })
   @IsOptional()

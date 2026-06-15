@@ -31,6 +31,15 @@ export class Review {
 
   @Prop({ enum: Object.values(ReviewStatus), default: ReviewStatus.Visible })
   status: ReviewStatus;
+
+  @Prop()
+  moderatedAt?: Date;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  moderatedBy?: Types.ObjectId;
+
+  @Prop({ trim: true })
+  moderationReason?: string;
 }
 
 export const ReviewSchema = SchemaFactory.createForClass(Review);

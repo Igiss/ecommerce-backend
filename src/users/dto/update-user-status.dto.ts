@@ -1,5 +1,5 @@
-import { IsIn } from 'class-validator';
-import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserStatus } from '../../database/schemas/user.schema';
 
 export class UpdateUserStatusDto {
@@ -10,4 +10,9 @@ export class UpdateUserStatusDto {
   })
   @IsIn(['pending', 'active', 'blocked'])
   status: UserStatus;
+
+  @ApiPropertyOptional({ example: 'Vi phạm điều khoản sử dụng' })
+  @IsOptional()
+  @IsString()
+  blockedReason?: string;
 }

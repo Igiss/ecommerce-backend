@@ -31,6 +31,18 @@ export class User {
   @Prop({ enum: ['pending', 'active', 'blocked'], default: 'active' })
   status: UserStatus;
 
+  @Prop()
+  emailVerifiedAt?: Date;
+
+  @Prop()
+  lastLoginAt?: Date;
+
+  @Prop()
+  blockedAt?: Date;
+
+  @Prop({ trim: true })
+  blockedReason?: string;
+
   @Prop({ type: String, default: '' })
   address: string;
 }

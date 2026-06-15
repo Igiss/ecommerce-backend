@@ -5,6 +5,7 @@ import { Product, ProductSchema } from '../database/schemas/product.schema';
 import { Review, ReviewSchema } from '../database/schemas/review.schema';
 import { ReviewsController } from './reviews.controller';
 import { ReviewsService } from './reviews.service';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { ReviewsService } from './reviews.service';
       { name: Product.name, schema: ProductSchema },
       { name: Order.name, schema: OrderSchema },
     ]),
+    UploadModule,
   ],
   controllers: [ReviewsController],
   providers: [ReviewsService],

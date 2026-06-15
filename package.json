@@ -9,10 +9,11 @@
     "start:dev": "nest start --watch",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
-    "test": "node --require ts-node/register --test src/reports/reports.service.spec.ts src/auth/auth.security.spec.ts src/orders/orders.owner.spec.ts src/products/products.owner.spec.ts src/coupons/coupons.owner.spec.ts src/database/seed.spec.ts",
+    "test": "node --require ts-node/register --test src/reports/reports.service.spec.ts src/auth/auth.security.spec.ts src/orders/orders.owner.spec.ts src/products/products.owner.spec.ts src/coupons/coupons.owner.spec.ts src/database/seed.spec.ts src/upload/upload.service.spec.ts",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "seed": "ts-node src/database/seed.ts",
-    "migrate:order-owners": "ts-node src/database/migrations/backfill-order-item-owners.ts"
+    "migrate:order-owners": "ts-node src/database/migrations/backfill-order-item-owners.ts",
+    "migrate:commerce-fields": "ts-node src/database/migrations/backfill-commerce-fields.ts"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -28,6 +29,7 @@
     "bcrypt": "^5.1.1",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.1",
+    "cloudinary": "^2.10.0",
     "mongoose": "^8.9.2",
     "passport": "^0.7.0",
     "passport-google-oauth20": "^2.0.0",
@@ -42,7 +44,6 @@
     "@nestjs/testing": "^10.4.15",
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.0",
-    "@types/multer": "^2.1.0",
     "@types/node": "^22.10.2",
     "@types/passport-jwt": "^4.0.1",
     "@typescript-eslint/eslint-plugin": "^8.61.0",

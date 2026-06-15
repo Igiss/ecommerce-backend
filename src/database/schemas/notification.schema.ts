@@ -27,6 +27,9 @@ export class Notification {
   @Prop({ default: false })
   isRead: boolean;
 
+  @Prop()
+  readAt?: Date;
+
   @Prop({ type: Object, default: {} })
   metadata: Record<string, unknown>;
 }

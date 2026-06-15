@@ -39,6 +39,7 @@ describe('ProductsService owner scope', () => {
       productModel as never,
       {} as never,
       {} as never,
+      {} as never,
     );
 
     await service.findAllByOwner(ownerId, {});

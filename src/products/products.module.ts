@@ -6,6 +6,7 @@ import { Counter, CounterSchema } from '../database/schemas/counter.schema';
 import { ProductsController } from './products.controller';
 import { OwnerProductsController } from './owner-products.controller';
 import { ProductsService } from './products.service';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { ProductsService } from './products.service';
       { name: Counter.name, schema: CounterSchema },
     ]),
     CategoriesModule,
+    UploadModule,
   ],
   controllers: [ProductsController, OwnerProductsController],
   providers: [ProductsService],

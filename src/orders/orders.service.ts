@@ -7,7 +7,9 @@ import { Order, OrderDocument } from '../database/schemas/order.schema';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { CustomDesign, CustomDesignDocument } from '../database/schemas/custom-design.schema';
 import { CreateOrderDto } from './dto/create-order.dto';
+import { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
+import { CouponsService } from '../coupons/coupons.service';
 
 @Injectable()
 export class OrdersService {
@@ -15,6 +17,7 @@ export class OrdersService {
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(CustomDesign.name) private readonly customDesignModel: Model<CustomDesignDocument>,
+    private readonly couponsService: CouponsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -22,19 +25,35 @@ export class OrdersService {
       throw new BadRequestException('Order items are required');
     }
 
-    const items = await Promise.all(
-      dto.items.map(async (item) => {
+    const reservedItems: Array<{ productId: Types.ObjectId; quantity: number }> = [];
+    try {
+      const pricedItems = [];
+      for (const item of dto.items) {
         if (!item.productId) {
           throw new BadRequestException('productId is required');
         }
 
         const product = await this.productModel
-          .findOne({ productId: item.productId, status: { $ne: ProductStatus.Deleted } })
+          .findOneAndUpdate(
+            {
+              productId: item.productId,
+              status: ProductStatus.Active,
+              stock: { $gte: item.quantity },
+            },
+            {
+              $inc: {
+                stock: -item.quantity,
+                soldCount: item.quantity,
+              },
+            },
+            { new: true },
+          )
           .exec();
 
         if (!product) {
-          throw new NotFoundException('Product not found');
+          throw new BadRequestException('Product is unavailable or out of stock');
         }
+        reservedItems.push({ productId: product._id, quantity: item.quantity });
 
         if (item.customDesignId) {
           const design = await this.customDesignModel.findById(item.customDesignId).exec();
@@ -44,8 +63,9 @@ export class OrdersService {
         }
 
         const price = product.salePrice ?? product.price;
-        return {
+        pricedItems.push({
           productId: product._id,
+          categoryId: product.categoryId,
           customDesignId: item.customDesignId ? new Types.ObjectId(item.customDesignId) : undefined,
           ownerId: product.createdBy,
           productName: product.name,
@@ -54,20 +74,63 @@ export class OrdersService {
           price,
           total: price * item.quantity,
           image: product.images[0],
-        };
-      }),
-    );
+        });
+      }
 
-    const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
+      const subtotal = pricedItems.reduce((sum, item) => sum + item.total, 0);
+      const shippingFee = subtotal > 500000 ? 0 : 30000;
+      const couponResult = dto.couponCode
+        ? await this.couponsService.calculateForOrder(
+            userId,
+            dto.couponCode,
+            pricedItems,
+          )
+        : undefined;
+      const discountAmount = couponResult?.actualDiscount || 0;
+      const totalAmount = Math.max(subtotal + shippingFee - discountAmount, 0);
+      const orderId = new Types.ObjectId();
+      const items = pricedItems.map(({ categoryId: _categoryId, ...item }) => item);
 
-    return this.orderModel.create({
-      userId: new Types.ObjectId(userId),
-      items,
-      totalAmount,
-      shippingAddress: dto.shippingAddress,
-      paymentMethod: dto.paymentMethod,
-      note: dto.note || '',
-    });
+      const order = await this.orderModel.create({
+        _id: orderId,
+        userId: new Types.ObjectId(userId),
+        items,
+        subtotal,
+        shippingFee,
+        discountAmount,
+        totalAmount,
+        couponId: couponResult?.coupon._id,
+        couponCode: couponResult?.coupon.code,
+        shippingAddress: dto.shippingAddress,
+        paymentMethod: dto.paymentMethod,
+        note: dto.note || '',
+      });
+
+      if (couponResult) {
+        try {
+          await this.couponsService.recordUsage(
+            couponResult.coupon._id,
+            userId,
+            orderId,
+            discountAmount,
+          );
+        } catch (error) {
+          await this.orderModel.findByIdAndDelete(orderId).exec();
+          throw error;
+        }
+      }
+      return order;
+    } catch (error) {
+      await Promise.all(
+        reservedItems.map((item) =>
+          this.productModel.updateOne(
+            { _id: item.productId },
+            { $inc: { stock: item.quantity, soldCount: -item.quantity } },
+          ),
+        ),
+      );
+      throw error;
+    }
   }
 
   async findMine(userId: string) {
@@ -95,11 +158,30 @@ export class OrdersService {
     return order;
   }
 
-  async updateStatus(id: string, dto: UpdateOrderStatusDto) {
+  async updateStatus(id: string, dto: UpdateAdminOrderStatusDto) {
+    const allowedStatuses: OrderStatus[] = [
+      OrderStatus.Confirmed,
+      OrderStatus.Shipping,
+      OrderStatus.Completed,
+    ];
+    if (!allowedStatuses.includes(dto.orderStatus)) {
+      throw new ForbiddenException('Admin cannot cancel orders on behalf of users');
+    }
+
+    const now = new Date();
+    const lifecycleUpdate = {
+      shippedAt: dto.orderStatus === OrderStatus.Shipping ? now : undefined,
+      completedAt: dto.orderStatus === OrderStatus.Completed ? now : undefined,
+    };
     const order = await this.orderModel
       .findByIdAndUpdate(
         id,
-        { orderStatus: dto.orderStatus, cancelReason: dto.cancelReason },
+        {
+          orderStatus: dto.orderStatus,
+          shippingProvider: dto.shippingProvider,
+          trackingCode: dto.trackingCode,
+          ...lifecycleUpdate,
+        },
         { new: true },
       )
       .exec();
@@ -127,6 +209,20 @@ export class OrdersService {
 
     order.orderStatus = OrderStatus.Cancelled;
     order.cancelReason = cancelReason;
+    order.cancelledAt = new Date();
+    await Promise.all([
+      ...order.items
+        .filter((item) => Boolean(item.productId))
+        .map((item) =>
+        this.productModel.updateOne(
+          { _id: item.productId },
+          { $inc: { stock: item.quantity, soldCount: -item.quantity } },
+        ),
+        ),
+      order.couponId
+        ? this.couponsService.releaseUsage(order._id)
+        : Promise.resolve(),
+    ]);
     return order.save();
   }
 
@@ -196,7 +292,19 @@ export class OrdersService {
           shippingAddress: 1,
           paymentMethod: 1,
           paymentStatus: 1,
+          paidAt: 1,
+          subtotal: 1,
+          shippingFee: 1,
+          discountAmount: 1,
+          couponId: 1,
+          couponCode: 1,
+          transactionCode: 1,
           orderStatus: 1,
+          cancelledAt: 1,
+          shippedAt: 1,
+          completedAt: 1,
+          trackingCode: 1,
+          shippingProvider: 1,
           note: 1,
           createdAt: 1,
           updatedAt: 1,

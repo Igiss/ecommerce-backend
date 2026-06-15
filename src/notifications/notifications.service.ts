@@ -24,7 +24,11 @@ export class NotificationsService {
 
   async markAsRead(id: string, userId: string) {
     const notification = await this.notificationModel
-      .findOneAndUpdate({ _id: id, userId }, { isRead: true }, { new: true })
+      .findOneAndUpdate(
+        { _id: id, userId },
+        { isRead: true, readAt: new Date() },
+        { new: true },
+      )
       .exec();
 
     if (!notification) {
@@ -35,7 +39,12 @@ export class NotificationsService {
   }
 
   async markAllAsRead(userId: string) {
-    await this.notificationModel.updateMany({ userId }, { isRead: true }).exec();
+    await this.notificationModel
+      .updateMany(
+        { userId, isRead: false },
+        { isRead: true, readAt: new Date() },
+      )
+      .exec();
     return { message: 'All notifications marked as read' };
   }
 }

@@ -1,5 +1,15 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsDate, IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsDate,
+  IsEnum,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DiscountType } from '../../database/schemas/coupon.schema';
 
@@ -45,6 +55,12 @@ export class CreateCouponDto {
   @IsDate()
   expiryDate: Date;
 
+  @ApiPropertyOptional({ type: String, format: 'date-time' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  startsAt?: Date;
+
   @ApiPropertyOptional({ example: true, default: true })
   @IsOptional()
   @IsBoolean()
@@ -56,4 +72,23 @@ export class CreateCouponDto {
   @IsNumber()
   @Min(1)
   usageLimit?: number;
+
+  @ApiPropertyOptional({ example: 1, minimum: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  perUserLimit?: number;
+
+  @ApiPropertyOptional({ type: [String], description: 'MongoDB product ObjectIds' })
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  applicableProductIds?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'MongoDB category ObjectIds' })
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  applicableCategoryIds?: string[];
 }

@@ -17,6 +17,10 @@ describe('CouponsService owner scope', () => {
         filters.push(filter);
         return listQuery;
       },
+      findOne: (filter: Record<string, unknown>) => {
+        filters.push(filter);
+        return { exec: async () => null };
+      },
       findOneAndUpdate: (filter: Record<string, unknown>) => {
         filters.push(filter);
         return { exec: async () => null };
@@ -26,7 +30,7 @@ describe('CouponsService owner scope', () => {
         return { exec: async () => null };
       },
     };
-    const service = new CouponsService(couponModel as never);
+    const service = new CouponsService(couponModel as never, {} as never);
     const couponId = new Types.ObjectId().toString();
 
     await service.findAllByOwner(ownerId);

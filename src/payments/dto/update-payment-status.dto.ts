@@ -1,4 +1,5 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, Min } from 'class-validator';
+import { Type } from 'class-transformer';
 import { PaymentStatus } from '../../common/enums/payment-status.enum';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -11,4 +12,21 @@ export class UpdatePaymentStatusDto {
   @IsOptional()
   @IsString()
   transactionCode?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  providerTransactionId?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  failureReason?: string;
+
+  @ApiPropertyOptional({ minimum: 0 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0)
+  refundAmount?: number;
 }

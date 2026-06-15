@@ -85,8 +85,12 @@ export class ProductsController {
   @ApiParam({ name: 'id', type: Number, example: 1, description: 'ID số của sản phẩm' })
   @ApiBadRequestResponse({ description: 'ID phải là số nguyên dương' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy sản phẩm' })
-  update(@Param('id', ParsePositiveIntPipe) id: number, @Body() dto: UpdateProductDto) {
-    return this.productsService.update(id, dto);
+  update(
+    @Param('id', ParsePositiveIntPipe) id: number,
+    @Body() dto: UpdateProductDto,
+    @CurrentUser() user: JwtPayload,
+  ) {
+    return this.productsService.update(id, dto, user.sub);
   }
 
   @Delete(':id')

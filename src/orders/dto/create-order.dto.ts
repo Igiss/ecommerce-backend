@@ -76,6 +76,11 @@ export class CreateOrderDto {
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
 
+  @ApiPropertyOptional({ example: 'SALE10' })
+  @IsOptional()
+  @IsString()
+  couponCode?: string;
+
   @ApiPropertyOptional({ example: 'Giao hàng giờ hành chính' })
   @IsOptional()
   @IsString()

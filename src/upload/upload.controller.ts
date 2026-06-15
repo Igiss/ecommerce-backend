@@ -1,64 +1,76 @@
-import { BadRequestException, Controller, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
-import { UploadType } from '../database/schemas/upload.schema';
+import { CompleteUploadDto } from './dto/complete-upload.dto';
+import { CreateUploadSignatureDto } from './dto/create-upload-signature.dto';
 import { UploadService } from './upload.service';
-
-function storage(folder: string) {
-  return diskStorage({
-    destination: `uploads/${folder}`,
-    filename: (_req, file, callback) => {
-      const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1e9)}${extname(file.originalname)}`;
-      callback(null, uniqueName);
-    },
-  });
-}
 
 @ApiTags('Upload')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('upload')
 export class UploadController {
   constructor(private readonly uploadService: UploadService) {}
 
-  @Post('product-image')
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '[Admin/Owner] Upload ảnh sản phẩm, trả URL ảnh local' })
-  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', { storage: storage('products') }))
-  uploadProductImage(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-    return this.uploadService.saveFile(user.sub, file, UploadType.ProductImage);
+  @Post('signature')
+  @ApiOperation({
+    summary: 'Buoc 1 - Lay chu ky upload Cloudinary',
+    description: [
+      '1. Goi endpoint nay voi metadata file.',
+      '2. FE upload truc tiep len uploadUrl bang cac parameters duoc tra ve.',
+      '3. FE goi POST /upload/complete voi uploadId.',
+      'product_image chi danh cho Admin/Owner; review_image chi danh cho User.',
+      'Ho tro JPEG, PNG, WebP. Avatar toi da 5 MB; cac loai anh khac toi da 10 MB.',
+    ].join('\n'),
+  })
+  @ApiCreatedResponse({
+    description: 'Chu ky va tham so upload truc tiep len Cloudinary',
+  })
+  @ApiBadRequestResponse({
+    description: 'Loai file hoac kich thuoc file khong hop le',
+  })
+  @ApiForbiddenResponse({
+    description: 'Role hien tai khong duoc upload loai anh da chon',
+  })
+  createSignature(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CreateUploadSignatureDto,
+  ) {
+    return this.uploadService.createSignature(user.sub, user.role, dto);
   }
 
-  @Post('avatar')
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '[User] Upload avatar, trả URL ảnh local' })
-  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', { storage: storage('avatars') }))
-  uploadAvatar(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-    return this.uploadService.saveFile(user.sub, file, UploadType.Avatar);
-  }
-
-  @Post('custom-design')
-  @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: '[User] Upload ảnh/file mẫu cho yêu cầu custom' })
-  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
-  @UseInterceptors(FileInterceptor('file', { storage: storage('custom-designs') }))
-  uploadCustomDesign(@CurrentUser() user: JwtPayload, @UploadedFile() file?: Express.Multer.File) {
-    if (!file) {
-      throw new BadRequestException('File is required');
-    }
-    return this.uploadService.saveFile(user.sub, file, UploadType.CustomDesign);
+  @Post('complete')
+  @ApiOperation({
+    summary: 'Buoc 3 - Xac nhan upload va nhan Upload ID',
+    description:
+      'BE doc metadata tu Cloudinary, xac minh ownership, dinh dang, kich thuoc va thoi han chu ky truoc khi kich hoat upload.',
+  })
+  @ApiOkResponse({
+    description: 'Upload da duoc xac minh va co the gan vao avatar/product/review',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Upload het han, file khong ton tai, sai dinh dang, sai kich thuoc hoac khong khop chu ky',
+  })
+  @ApiNotFoundResponse({
+    description: 'Upload khong ton tai hoac khong thuoc user hien tai',
+  })
+  completeUpload(
+    @CurrentUser() user: JwtPayload,
+    @Body() dto: CompleteUploadDto,
+  ) {
+    return this.uploadService.completeUpload(user.sub, dto.uploadId);
   }
 }

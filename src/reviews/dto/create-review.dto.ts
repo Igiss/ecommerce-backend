@@ -1,4 +1,13 @@
-import { IsArray, IsMongoId, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import {
+  ArrayMaxSize,
+  IsArray,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
@@ -25,9 +34,16 @@ export class CreateReviewDto {
   @IsString()
   comment?: string;
 
-  @ApiPropertyOptional({ type: [String], example: ['https://example.com/review.jpg'] })
+  @ApiPropertyOptional({
+    type: [String],
+    maxItems: 5,
+    example: ['665f08d2de3f6c0cb82a4581'],
+    description:
+      'Tối đa 5 Upload ID loại `review_image` đã hoàn tất và thuộc user đang tạo review; không gửi URL trực tiếp.',
+  })
   @IsOptional()
   @IsArray()
-  @IsString({ each: true })
-  images?: string[];
+  @ArrayMaxSize(5)
+  @IsMongoId({ each: true })
+  imageUploadIds?: string[];
 }

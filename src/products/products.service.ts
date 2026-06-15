@@ -9,6 +9,8 @@ import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { Counter, CounterDocument } from '../database/schemas/counter.schema';
+import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
+import { UploadService } from '../upload/upload.service';
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
@@ -16,6 +18,7 @@ export class ProductsService implements OnModuleInit {
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>,
     private readonly categoriesService: CategoriesService,
+    private readonly uploadService: UploadService,
   ) {}
 
   async onModuleInit() {
@@ -28,9 +31,22 @@ export class ProductsService implements OnModuleInit {
     const slug = createSlug(createProductDto.slug || createProductDto.name);
     await this.ensureSlugAvailable(slug);
     const productId = await this.getNextProductId();
+    const productObjectId = new Types.ObjectId();
+    const { imageUploadIds, ...productData } = createProductDto;
+    const images = imageUploadIds
+      ? await this.uploadService.attachUploads(
+          createdBy,
+          imageUploadIds,
+          UploadType.ProductImage,
+          UploadTargetType.Product,
+          productObjectId,
+        )
+      : [];
 
     return this.productModel.create({
-      ...createProductDto,
+      _id: productObjectId,
+      ...productData,
+      images,
       productId,
       slug,
       createdBy: new Types.ObjectId(createdBy),
@@ -98,8 +114,10 @@ export class ProductsService implements OnModuleInit {
     return product;
   }
 
-  async update(id: number, updateProductDto: UpdateProductDto) {
+  async update(id: number, updateProductDto: UpdateProductDto, updatedBy: string) {
     const product = await this.findOne(id);
+    const updatePayload: Record<string, unknown> = { ...updateProductDto };
+    delete updatePayload.imageUploadIds;
 
     if (updateProductDto.categoryId) {
       await this.categoriesService.findOne(updateProductDto.categoryId);
@@ -109,11 +127,21 @@ export class ProductsService implements OnModuleInit {
     if (slugSource) {
       const slug = createSlug(slugSource);
       await this.ensureSlugAvailable(slug, product._id.toString());
-      updateProductDto.slug = slug;
+      updatePayload.slug = slug;
+    }
+
+    if (updateProductDto.imageUploadIds) {
+      updatePayload.images = await this.uploadService.attachUploads(
+        updatedBy,
+        updateProductDto.imageUploadIds,
+        UploadType.ProductImage,
+        UploadTargetType.Product,
+        product._id,
+      );
     }
 
     const updatedProduct = await this.productModel
-      .findByIdAndUpdate(product._id, updateProductDto, { new: true })
+      .findByIdAndUpdate(product._id, updatePayload, { new: true })
       .populate('categoryId', 'name slug')
       .populate('createdBy', 'fullName email')
       .exec();
@@ -136,6 +164,8 @@ export class ProductsService implements OnModuleInit {
     if (!product) {
       throw new NotFoundException('Product not found');
     }
+    const updatePayload: Record<string, unknown> = { ...updateProductDto };
+    delete updatePayload.imageUploadIds;
 
     if (updateProductDto.categoryId) {
       await this.categoriesService.findOne(updateProductDto.categoryId);
@@ -145,13 +175,23 @@ export class ProductsService implements OnModuleInit {
     if (slugSource) {
       const slug = createSlug(slugSource);
       await this.ensureSlugAvailable(slug, product._id.toString());
-      updateProductDto.slug = slug;
+      updatePayload.slug = slug;
+    }
+
+    if (updateProductDto.imageUploadIds) {
+      updatePayload.images = await this.uploadService.attachUploads(
+        ownerId,
+        updateProductDto.imageUploadIds,
+        UploadType.ProductImage,
+        UploadTargetType.Product,
+        product._id,
+      );
     }
 
     return this.productModel
       .findOneAndUpdate(
         { _id: product._id, createdBy: new Types.ObjectId(ownerId) },
-        updateProductDto,
+        updatePayload,
         { new: true },
       )
       .populate('categoryId', 'name slug')
@@ -160,7 +200,11 @@ export class ProductsService implements OnModuleInit {
 
   async remove(id: number) {
     const product = await this.productModel
-      .findOneAndUpdate({ productId: id }, { status: ProductStatus.Deleted }, { new: true })
+      .findOneAndUpdate(
+        { productId: id },
+        { status: ProductStatus.Deleted, deletedAt: new Date() },
+        { new: true },
+      )
       .exec();
 
     if (!product) {
@@ -174,7 +218,7 @@ export class ProductsService implements OnModuleInit {
     const product = await this.productModel
       .findOneAndUpdate(
         { productId: id, createdBy: new Types.ObjectId(ownerId) },
-        { status: ProductStatus.Deleted },
+        { status: ProductStatus.Deleted, deletedAt: new Date() },
         { new: true },
       )
       .exec();

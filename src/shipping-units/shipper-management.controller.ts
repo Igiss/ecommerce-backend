@@ -14,6 +14,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import { ParseMongoIdPipe } from '../common/pipes/parse-mongo-id.pipe';
 import { CreateShipperDto } from './dto/create-shipper.dto';
+import { UpdateShipperDto } from './dto/update-shipper.dto';
 import { ShippingUnitsService } from './shipping-units.service';
 
 @ApiTags('ShippingUnits')
@@ -48,6 +49,18 @@ export class ShipperManagementController {
     @Param('id', ParseMongoIdPipe) id: string,
   ) {
     return this.shippingUnitsService.findShipperById(id, user.sub);
+  }
+
+  @Patch(':id')
+  @ApiOperation({ summary: '[ShippingUnit] Cập nhật thông tin Shipper (address, phone, khu vực phụ trách...)' })
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của user Shipper' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy hoặc không thuộc đơn vị' })
+  updateShipper(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseMongoIdPipe) id: string,
+    @Body() dto: UpdateShipperDto,
+  ) {
+    return this.shippingUnitsService.updateShipperProfile(id, user.sub, dto);
   }
 
   @Patch(':id/availability')

@@ -47,6 +47,14 @@ export class OrderItem {
 
   @Prop({ trim: true })
   fulfillmentNote?: string;
+
+  /** Owner đã giao hàng cho đơn vị vận chuyển chưa */
+  @Prop({ default: false })
+  handedOverToShipping: boolean;
+
+  /** Thời điểm owner xác nhận đã giao cho đơn vị vận chuyển */
+  @Prop()
+  handedOverAt?: Date;
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);

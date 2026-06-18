@@ -7,6 +7,7 @@ import {
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
+import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Role } from '../common/enums/role.enum';
 import { Order, OrderDocument } from '../database/schemas/order.schema';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
@@ -17,6 +18,7 @@ import { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { PickupOrderDto } from './dto/pickup-order.dto';
 import { CouponsService } from '../coupons/coupons.service';
+import { ShippingUnitsService } from '../shipping-units/shipping-units.service';
 
 @Injectable()
 export class OrdersService {
@@ -26,6 +28,7 @@ export class OrdersService {
     @InjectModel(CustomDesign.name) private readonly customDesignModel: Model<CustomDesignDocument>,
     @InjectModel(ShippingUnit.name) private readonly shippingUnitModel: Model<ShippingUnitDocument>,
     private readonly couponsService: CouponsService,
+    private readonly shippingUnitsService: ShippingUnitsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -168,11 +171,13 @@ export class OrdersService {
 
   /**
    * Admin confirm đơn hàng.
-   * Sau khi confirm, tự động tìm ShippingUnit theo phường/xã → gán luôn (assigned).
-   * Nếu không tìm được ShippingUnit phù hợp → vẫn set confirmed, admin override sau.
+   * Sau khi confirm, tự động:
+   * 1. Tìm ShippingUnit theo phường/xã → gán shippingUnitId
+   * 2. Tìm Shipper phụ trách ward đó (round-robin) → gán shipperId
+   * Nếu không tìm được ShippingUnit → set confirmed, admin override sau.
+   * Nếu tìm được Unit nhưng không có Shipper → assign cho Unit, Unit tự phân tay.
    */
   async updateStatus(id: string, dto: UpdateAdminOrderStatusDto) {
-    // Admin chỉ được set Confirmed
     const order = await this.orderModel.findById(id).exec();
     if (!order) {
       throw new NotFoundException('Order not found');
@@ -182,31 +187,61 @@ export class OrdersService {
       throw new BadRequestException('Only pending orders can be confirmed');
     }
 
-    // Tự động tìm ShippingUnit theo phường/xã
     const ward = order.shippingAddress.ward;
+    const now = new Date();
+
+    // Bước 1: Tìm ShippingUnit phụ trách phường/xã
     const shippingUnit = await this.shippingUnitModel
       .findOne({ coverageWards: ward })
       .exec();
 
-    const now = new Date();
-
-    if (shippingUnit) {
-      // Có ShippingUnit phủ sóng → tự động assign luôn
+    if (!shippingUnit) {
+      // Không tìm được ShippingUnit → chỉ confirm
       await this.orderModel.findByIdAndUpdate(id, {
-        orderStatus: OrderStatus.Assigned,
-        shippingUnitId: shippingUnit.userId,
-        assignedAt: now,
+        orderStatus: OrderStatus.Confirmed,
       }).exec();
 
-      return this.orderModel.findById(id).exec();
+      const updatedOrder = await this.orderModel.findById(id).exec();
+      return {
+        order: updatedOrder,
+        autoAssignment: {
+          shippingUnit: false,
+          shipper: false,
+          message: `Khu vực "${ward}" chưa có đơn vị vận chuyển phụ trách. Admin cần gán thủ công.`,
+        },
+      };
     }
 
-    // Không tìm được → chỉ confirm, admin sẽ override sau
-    await this.orderModel.findByIdAndUpdate(id, {
-      orderStatus: OrderStatus.Confirmed,
-    }).exec();
+    // Bước 2: Tìm Shipper round-robin theo ward
+    const shipperResult = await this.shippingUnitsService.autoAssignShipperByWard(
+      ward,
+      shippingUnit.userId.toString(),
+    );
 
-    return this.orderModel.findById(id).exec();
+    const updateData: Record<string, unknown> = {
+      orderStatus: OrderStatus.Assigned,
+      shippingUnitId: shippingUnit.userId,
+      assignedAt: now,
+    };
+
+    if (shipperResult) {
+      updateData.shipperId = shipperResult.shipperId;
+    }
+
+    await this.orderModel.findByIdAndUpdate(id, updateData).exec();
+    const updatedOrder = await this.orderModel.findById(id).exec();
+
+    return {
+      order: updatedOrder,
+      autoAssignment: {
+        shippingUnit: true,
+        shipper: !!shipperResult,
+        shipperName: shipperResult?.shipperName || null,
+        message: shipperResult
+          ? `Đơn hàng đã được tự động phân cho shipper ${shipperResult.shipperName} (${ward})`
+          : `Đã gán đơn vị vận chuyển nhưng chưa tìm thấy shipper phụ trách "${ward}". Đơn vị vận chuyển sẽ phân tay.`,
+      },
+    };
   }
 
   /**
@@ -316,27 +351,28 @@ export class OrdersService {
     return order;
   }
 
-  /** [Shipper] Hoàn thành giao hàng: shipping → completed */
+  /** [Shipper] Hoàn thành giao hàng: shipping → completed. Đơn COD tự động set paid. */
   async completeDelivery(orderId: string, shipperId: string) {
-    const order = await this.orderModel
-      .findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(orderId),
-          shipperId: new Types.ObjectId(shipperId),
-          orderStatus: OrderStatus.Shipping,
-        },
-        {
-          orderStatus: OrderStatus.Completed,
-          completedAt: new Date(),
-        },
-        { new: true },
-      )
-      .exec();
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      shipperId: new Types.ObjectId(shipperId),
+      orderStatus: OrderStatus.Shipping,
+    }).exec();
 
     if (!order) {
       throw new NotFoundException('Order not found, not assigned to you, or not in shipping status');
     }
-    return order;
+
+    order.orderStatus = OrderStatus.Completed;
+    order.completedAt = new Date();
+
+    // Đơn COD: shipper đã nhận tiền khi giao → tự động đánh dấu đã thanh toán
+    if (order.paymentMethod === 'COD' && order.paymentStatus !== PaymentStatus.Paid) {
+      order.paymentStatus = PaymentStatus.Paid;
+      order.paidAt = new Date();
+    }
+
+    return order.save();
   }
 
   // ─── Owner methods ───────────────────────────────────────────────────────
@@ -385,6 +421,44 @@ export class OrdersService {
       throw new NotFoundException('Order not found');
     }
     return this.findOneByOwner(id, ownerId);
+  }
+
+  /** [Owner] Xác nhận đã giao hàng cho đơn vị vận chuyển */
+  async ownerHandOverToShipping(orderId: string, ownerId: string) {
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      'items.ownerId': new Types.ObjectId(ownerId),
+      orderStatus: { $in: [OrderStatus.Assigned, OrderStatus.Shipping] },
+    }).exec();
+
+    if (!order) {
+      throw new NotFoundException('Order not found or not in assignable status');
+    }
+
+    // Kiểm tra xem owner đã giao chưa
+    const ownerItems = order.items.filter(
+      (item) => item.ownerId.toString() === ownerId,
+    );
+    const allHandedOver = ownerItems.every((item) => item.handedOverToShipping);
+    if (allHandedOver) {
+      throw new BadRequestException('Bạn đã xác nhận giao hàng cho đơn vị vận chuyển rồi');
+    }
+
+    // Đánh dấu tất cả items của owner là đã giao cho vận chuyển
+    await this.orderModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(orderId) },
+      {
+        $set: {
+          'items.$[ownerItem].handedOverToShipping': true,
+          'items.$[ownerItem].handedOverAt': new Date(),
+        },
+      },
+      {
+        arrayFilters: [{ 'ownerItem.ownerId': new Types.ObjectId(ownerId) }],
+      },
+    ).exec();
+
+    return this.findOneByOwner(orderId, ownerId);
   }
 
   private ownerOrderPipeline(ownerId: string): PipelineStage[] {

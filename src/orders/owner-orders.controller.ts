@@ -67,4 +67,20 @@ export class OwnerOrdersController {
   ) {
     return this.ordersService.updateOwnerFulfillment(id, user.sub, dto);
   }
+
+  @Patch(':id/hand-over')
+  @ApiOperation({
+    summary: '[Owner] Xác nhận đã giao hàng cho đơn vị vận chuyển',
+    description:
+      'Owner xác nhận tất cả sản phẩm của mình trong đơn đã được đưa cho bên vận chuyển. ' +
+      'Đơn phải ở trạng thái assigned hoặc shipping.',
+  })
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của đơn hàng' })
+  @ApiNotFoundResponse({ description: 'Không tìm thấy đơn hàng hoặc đơn chưa được phân cho vận chuyển' })
+  handOverToShipping(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseMongoIdPipe) id: string,
+  ) {
+    return this.ordersService.ownerHandOverToShipping(id, user.sub);
+  }
 }

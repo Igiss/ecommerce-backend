@@ -26,6 +26,7 @@ describe('OrdersService owner scope', () => {
       {} as never,
       {} as never,
       {} as never,
+      {} as never,
     );
     const orderId = new Types.ObjectId().toString();
 

@@ -25,6 +25,14 @@ export class ShipperProfile {
   /** Shipper có đang sẵn sàng nhận đơn không */
   @Prop({ default: true })
   isAvailable: boolean;
+
+  /** Phường/xã mà shipper phụ trách giao hàng */
+  @Prop({ trim: true })
+  coverageWard?: string;
+
+  /** Lần cuối được tự động phân đơn (dùng cho round-robin) */
+  @Prop()
+  lastAssignedAt?: Date;
 }
 
 export const ShipperProfileSchema = SchemaFactory.createForClass(ShipperProfile);

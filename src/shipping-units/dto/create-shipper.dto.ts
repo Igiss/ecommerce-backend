@@ -31,4 +31,17 @@ export class CreateShipperDto {
   @IsOptional()
   @IsString()
   licensePlate?: string;
+
+  @ApiPropertyOptional({ example: '12 Nguyễn Huệ, Quận 1, TP.HCM' })
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @ApiPropertyOptional({
+    example: 'Phường Bến Nghé',
+    description: 'Phường/xã mà shipper phụ trách giao hàng',
+  })
+  @IsOptional()
+  @IsString()
+  coverageWard?: string;
 }

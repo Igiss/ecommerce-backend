@@ -16,6 +16,7 @@ import { User, UserDocument } from '../database/schemas/user.schema';
 import { UpdateShippingUnitDto } from './dto/update-shipping-unit.dto';
 import { UpdateCoverageDto } from './dto/update-coverage.dto';
 import { CreateShipperDto } from './dto/create-shipper.dto';
+import { UpdateShipperDto } from './dto/update-shipper.dto';
 
 @Injectable()
 export class ShippingUnitsService {
@@ -100,6 +101,7 @@ export class ShippingUnitsService {
       phone: dto.phone,
       role: Role.Shipper,
       status: 'active',
+      address: dto.address,
     });
 
     await this.shipperProfileModel.create({
@@ -107,6 +109,7 @@ export class ShippingUnitsService {
       shippingUnitId: new Types.ObjectId(shippingUnitUserId),
       vehicleType: dto.vehicleType,
       licensePlate: dto.licensePlate,
+      coverageWard: dto.coverageWard,
     });
 
     const { password: _pw, ...publicShipper } = shipper.toJSON() as Record<string, unknown>;
@@ -155,6 +158,49 @@ export class ShippingUnitsService {
       throw new NotFoundException('Shipper not found or does not belong to your unit');
     }
     return profile;
+  }
+
+  /** [ShippingUnit] Cập nhật thông tin Shipper (address, phone, coverageWard...) */
+  async updateShipperProfile(shipperId: string, shippingUnitUserId: string, dto: UpdateShipperDto) {
+    // Verify shipper thuộc đơn vị
+    const profile = await this.shipperProfileModel.findOne({
+      userId: new Types.ObjectId(shipperId),
+      shippingUnitId: new Types.ObjectId(shippingUnitUserId),
+    }).exec();
+
+    if (!profile) {
+      throw new NotFoundException('Shipper not found or does not belong to your unit');
+    }
+
+    // Tách các trường thuộc User vs ShipperProfile
+    const { fullName, phone, address, vehicleType, licensePlate, coverageWard } = dto;
+
+    // Cập nhật User fields (fullName, phone, address)
+    const userUpdate: Record<string, unknown> = {};
+    if (fullName !== undefined) userUpdate.fullName = fullName;
+    if (phone !== undefined) userUpdate.phone = phone;
+    if (address !== undefined) userUpdate.address = address;
+
+    if (Object.keys(userUpdate).length > 0) {
+      await this.userModel.findByIdAndUpdate(shipperId, userUpdate).exec();
+    }
+
+    // Cập nhật ShipperProfile fields (vehicleType, licensePlate, coverageWard)
+    const profileUpdate: Record<string, unknown> = {};
+    if (vehicleType !== undefined) profileUpdate.vehicleType = vehicleType;
+    if (licensePlate !== undefined) profileUpdate.licensePlate = licensePlate;
+    if (coverageWard !== undefined) profileUpdate.coverageWard = coverageWard;
+
+    if (Object.keys(profileUpdate).length > 0) {
+      Object.assign(profile, profileUpdate);
+      await profile.save();
+    }
+
+    // Trả về profile đã populate user info
+    return this.shipperProfileModel
+      .findById(profile._id)
+      .populate('userId', 'fullName email phone status address')
+      .exec();
   }
 
   // ─── ShippingUnit: quản lý đơn hàng ────────────────────────────────────────
@@ -227,5 +273,46 @@ export class ShippingUnitsService {
     return this.shippingUnitModel
       .findOne({ coverageWards: ward })
       .exec();
+  }
+
+  /**
+   * Tự động phân Shipper theo phường/xã (round-robin).
+   *
+   * Logic:
+   * 1. Tìm tất cả Shipper thuộc đơn vị, phụ trách ward, đang sẵn sàng
+   * 2. Sort theo lastAssignedAt tăng dần (null first → shipper chưa nhận đơn nào)
+   * 3. Chọn shipper đầu tiên → cập nhật lastAssignedAt
+   * 4. Trả về userId của shipper để gán vào đơn hàng
+   *
+   * @returns { shipperId, shipperName } hoặc null nếu không có shipper phù hợp
+   */
+  async autoAssignShipperByWard(
+    ward: string,
+    shippingUnitUserId: string,
+  ): Promise<{ shipperId: Types.ObjectId; shipperName: string } | null> {
+    // Tìm shipper có lastAssignedAt cũ nhất (hoặc null) → round-robin
+    const profile = await this.shipperProfileModel
+      .findOne({
+        shippingUnitId: new Types.ObjectId(shippingUnitUserId),
+        coverageWard: ward,
+        isAvailable: true,
+      })
+      .sort({ lastAssignedAt: 1 })  // null first, then oldest
+      .populate('userId', 'fullName')
+      .exec();
+
+    if (!profile) {
+      return null;
+    }
+
+    // Đánh dấu đã phân đơn cho shipper này (round-robin timestamp)
+    profile.lastAssignedAt = new Date();
+    await profile.save();
+
+    const user = profile.userId as unknown as { _id: Types.ObjectId; fullName: string };
+    return {
+      shipperId: user._id,
+      shipperName: user.fullName,
+    };
   }
 }

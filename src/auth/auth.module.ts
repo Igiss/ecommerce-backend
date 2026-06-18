@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
+import { MongooseModule } from '@nestjs/mongoose';
 import { PassportModule } from '@nestjs/passport';
 import { UsersModule } from '../users/users.module';
+import { ShippingUnit, ShippingUnitSchema } from '../database/schemas/shipping-unit.schema';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
@@ -13,6 +15,9 @@ import { GoogleAuthGuard } from './guards/google-auth.guard';
   imports: [
     UsersModule,
     PassportModule.register({ session: false }),
+    MongooseModule.forFeature([
+      { name: ShippingUnit.name, schema: ShippingUnitSchema },
+    ]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],

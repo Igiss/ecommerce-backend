@@ -7,10 +7,10 @@ import { ProductType } from './product.schema';
 export type OrderDocument = HydratedDocument<Order>;
 
 export enum PaymentMethod {
-  COD = 'COD',
+  COD     = 'COD',
   Banking = 'BANKING',
-  Momo = 'MOMO',
-  VNPay = 'VNPAY',
+  Momo    = 'MOMO',
+  VNPay   = 'VNPAY',
 }
 
 @Schema({ _id: false })
@@ -135,6 +135,19 @@ export class Order {
 
   @Prop({ trim: true })
   shippingProvider?: string;
+
+  // === Shipping assignment fields ===
+  /** Đơn vị vận chuyển được tự động phân theo phường/xã */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  shippingUnitId?: Types.ObjectId;
+
+  /** Shipper cụ thể được giao đơn bởi ShippingUnit */
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  shipperId?: Types.ObjectId;
+
+  /** Thời điểm đơn được phân cho ShippingUnit */
+  @Prop()
+  assignedAt?: Date;
 }
 
 export const OrderSchema = SchemaFactory.createForClass(Order);
@@ -147,6 +160,8 @@ OrderSchema.index({ createdAt: -1 });
 OrderSchema.index({ 'items.productId': 1 });
 OrderSchema.index({ 'items.ownerId': 1, createdAt: -1 });
 OrderSchema.index({ 'items.customDesignId': 1 });
+OrderSchema.index({ shippingUnitId: 1, orderStatus: 1 });
+OrderSchema.index({ shipperId: 1, orderStatus: 1 });
 
 OrderSchema.set('toJSON', {
   virtuals: true,

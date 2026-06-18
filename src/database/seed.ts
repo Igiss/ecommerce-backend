@@ -1,11 +1,13 @@
 import 'dotenv/config';
 import { NestFactory } from '@nestjs/core';
-import { getConnectionToken } from '@nestjs/mongoose';
+import { getConnectionToken, getModelToken } from '@nestjs/mongoose';
 import * as bcrypt from 'bcrypt';
-import { Connection } from 'mongoose';
+import { Connection, Model, Types } from 'mongoose';
 import { AppModule } from '../app.module';
 import { Role } from '../common/enums/role.enum';
 import { UsersService } from '../users/users.service';
+import { ShippingUnit, ShippingUnitDocument } from './schemas/shipping-unit.schema';
+import { ShipperProfile, ShipperProfileDocument } from './schemas/shipper-profile.schema';
 
 export function assertSeederAllowed(nodeEnv: string | undefined): void {
   if (nodeEnv === 'production') {
@@ -61,8 +63,54 @@ export async function runSeeder(argv = process.argv.slice(2)): Promise<void> {
       status: 'active',
     });
 
+    const shippingUnitEmail = process.env.SEED_SHIPPING_UNIT_EMAIL || 'shipping_unit@example.com';
+    const shippingUnitUser = await ensureUser(usersService, {
+      fullName: 'Seed Shipping Unit',
+      email: shippingUnitEmail,
+      password,
+      role: Role.ShippingUnit,
+      status: 'active',
+    });
+
+    const shippingUnitUserId = new Types.ObjectId((shippingUnitUser as any)._id || (shippingUnitUser as any).id);
+
+    const shippingUnitModel = app.get<Model<ShippingUnitDocument>>(getModelToken(ShippingUnit.name));
+    await shippingUnitModel.findOneAndUpdate(
+      { userId: shippingUnitUserId },
+      {
+        companyName: 'Giao Hàng Nhanh Seed',
+        coverageWards: ['Phường Bến Nghé', 'Phường Bến Thành'],
+        contactPhone: '0909123456',
+        address: '123 Đường Lê Lợi, Phường Bến Nghé, Quận 1, TP. HCM',
+      },
+      { upsert: true, new: true },
+    );
+
+    const shipperEmail = process.env.SEED_SHIPPER_EMAIL || 'shipper@example.com';
+    const shipperUser = await ensureUser(usersService, {
+      fullName: 'Seed Shipper',
+      email: shipperEmail,
+      password,
+      role: Role.Shipper,
+      status: 'active',
+    });
+
+    const shipperUserId = new Types.ObjectId((shipperUser as any)._id || (shipperUser as any).id);
+
+    const shipperProfileModel = app.get<Model<ShipperProfileDocument>>(getModelToken(ShipperProfile.name));
+    await shipperProfileModel.findOneAndUpdate(
+      { userId: shipperUserId },
+      {
+        shippingUnitId: shippingUnitUserId,
+        vehicleType: 'Xe máy',
+        licensePlate: '59-S1 123.45',
+        isAvailable: true,
+      },
+      { upsert: true, new: true },
+    );
+
     console.log(
-      `Seed complete. Accounts: ${admin.email}, ${owner.email}, ${user.email}`,
+      `Seed complete. Accounts: ${admin.email}, ${owner.email}, ${user.email}, ${shippingUnitUser.email}, ${shipperUser.email}`,
     );
   } finally {
     await app.close();

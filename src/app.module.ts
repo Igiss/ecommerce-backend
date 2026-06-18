@@ -13,6 +13,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { ProductsModule } from './products/products.module';
 import { ReportsModule } from './reports/reports.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { ShippingUnitsModule } from './shipping-units/shipping-units.module';
 import { UploadModule } from './upload/upload.module';
 import { UsersModule } from './users/users.module';
 import { AddressesModule } from './addresses/addresses.module';
@@ -39,6 +40,7 @@ import { AddressesModule } from './addresses/addresses.module';
     NotificationsModule,
     ReportsModule,
     ChatModule,
+    ShippingUnitsModule,
   ],
 })
 export class AppModule {}

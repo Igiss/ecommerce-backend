@@ -6,6 +6,7 @@ import {
   UserAddress,
   UserAddressDocument,
 } from '../database/schemas/user-address.schema';
+import { ShippingUnitsService } from '../shipping-units/shipping-units.service';
 import { CreateAddressDto } from './dto/create-address.dto';
 import { UpdateAddressDto } from './dto/update-address.dto';
 
@@ -16,6 +17,7 @@ export class AddressesService {
     private readonly addressModel: Model<UserAddressDocument>,
     @InjectModel(Counter.name)
     private readonly counterModel: Model<CounterDocument>,
+    private readonly shippingUnitsService: ShippingUnitsService,
   ) {}
 
   findAll(userId: string) {
@@ -34,12 +36,19 @@ export class AddressesService {
       await this.addressModel.updateMany({ userId: ownerId }, { isDefault: false }).exec();
     }
 
-    return this.addressModel.create({
+    const address = await this.addressModel.create({
       ...dto,
       addressId: await this.getNextAddressId(),
       userId: ownerId,
       isDefault,
     });
+
+    // Kiểm tra phủ sóng nếu là địa chỉ mặc định
+    const coverageWarning = isDefault
+      ? await this.buildCoverageWarning(dto.ward)
+      : null;
+
+    return { address, coverageWarning };
   }
 
   async update(userId: string, addressId: number, dto: UpdateAddressDto) {
@@ -56,7 +65,16 @@ export class AddressesService {
     }
 
     Object.assign(existing, dto);
-    return existing.save();
+    const address = await existing.save();
+
+    // Kiểm tra phủ sóng nếu update thành mặc định hoặc update ward của địa chỉ mặc định
+    const isDefault = dto.isDefault || existing.isDefault;
+    const ward = dto.ward ?? existing.ward;
+    const coverageWarning = isDefault
+      ? await this.buildCoverageWarning(ward)
+      : null;
+
+    return { address, coverageWarning };
   }
 
   async setDefault(userId: string, addressId: number) {
@@ -68,7 +86,12 @@ export class AddressesService {
 
     await this.addressModel.updateMany({ userId: ownerId }, { isDefault: false }).exec();
     address.isDefault = true;
-    return address.save();
+    await address.save();
+
+    // Kiểm tra phủ sóng phường/xã mới được set mặc định
+    const coverageWarning = await this.buildCoverageWarning(address.ward);
+
+    return { address, coverageWarning };
   }
 
   async remove(userId: string, addressId: number) {
@@ -91,6 +114,26 @@ export class AddressesService {
     }
 
     return { message: 'Address deleted successfully' };
+  }
+
+  /**
+   * Kiểm tra xem phường/xã có ShippingUnit phụ trách không.
+   * Trả về null nếu có đơn vị phụ trách, trả về chuỗi cảnh báo nếu chưa có.
+   */
+  async checkCoverageByWard(ward: string): Promise<{ covered: boolean; message: string | null }> {
+    const unit = await this.shippingUnitsService.findUnitByWard(ward);
+    if (unit) {
+      return { covered: true, message: null };
+    }
+    return {
+      covered: false,
+      message: `Khu vực "${ward}" hiện chưa có đơn vị vận chuyển phụ trách. Đơn hàng đến địa chỉ này có thể không được giao tự động — admin sẽ xử lý thủ công.`,
+    };
+  }
+
+  private async buildCoverageWarning(ward: string): Promise<string | null> {
+    const { message } = await this.checkCoverageByWard(ward);
+    return message;
   }
 
   private async getNextAddressId() {

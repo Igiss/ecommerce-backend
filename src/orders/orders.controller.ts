@@ -27,6 +27,7 @@ import { CancelOrderDto } from "./dto/cancel-order.dto";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateAdminOrderStatusDto } from "./dto/update-admin-order-status.dto";
 import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
+import { AssignUnitDto } from "./dto/assign-unit.dto";
 import { OrdersService } from "./orders.service";
 
 @ApiTags("Orders")
@@ -96,5 +97,21 @@ export class OrdersController {
     @Body() dto: CancelOrderDto,
   ) {
     return this.ordersService.cancelMine(id, user.sub, dto.cancelReason);
+  }
+
+  @Patch(":id/assign-unit")
+  @ApiOperation({
+    summary: "[Admin] Override ShippingUnit cho đơn hàng",
+    description:
+      "Dùng khi không tìm được ShippingUnit tự động hoặc cần can thiệp thủ công. " +
+      "Áp dụng cho đơn đang ở trạng thái confirmed hoặc assigned.",
+  })
+  @ApiParam({ name: "id", description: "MongoDB ObjectId của đơn hàng" })
+  @Roles(Role.Admin)
+  overrideShippingUnit(
+    @Param("id", ParseMongoIdPipe) id: string,
+    @Body() dto: AssignUnitDto,
+  ) {
+    return this.ordersService.overrideShippingUnit(id, dto.shippingUnitId);
   }
 }

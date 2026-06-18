@@ -7,6 +7,7 @@ import { ChangePasswordDto } from './dto/change-password.dto';
 import { LoginDto } from './dto/login.dto';
 import { RegisterDto } from './dto/register.dto';
 import { RegisterOwnerDto } from './dto/register-owner.dto';
+import { RegisterShippingUnitDto } from './dto/register-shipping-unit.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { GoogleAuthGuard } from './guards/google-auth.guard';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
@@ -37,6 +38,12 @@ export class AuthController {
   @ApiOperation({ summary: '[Public] Đăng ký tài khoản owner chờ admin duyệt' })
   registerOwner(@Body() registerDto: RegisterOwnerDto) {
     return this.authService.registerOwner(registerDto);
+  }
+
+  @Post('register-shipping-unit')
+  @ApiOperation({ summary: '[Public] Đăng ký tài khoản đơn vị vận chuyển — chờ admin duyệt' })
+  registerShippingUnit(@Body() dto: RegisterShippingUnitDto) {
+    return this.authService.registerShippingUnit(dto);
   }
 
   @Post('login')

@@ -66,6 +66,15 @@ export class ReviewsController {
     return this.reviewsService.getRatingSummary(productId);
   }
 
+  @Get('admin/all')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: '[Admin] Lấy toàn bộ đánh giá để duyệt' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.Admin)
+  findAllForAdmin() {
+    return this.reviewsService.findAllForAdmin();
+  }
+
   @Patch(':id/moderation')
   @ApiBearerAuth()
   @ApiOperation({ summary: '[Admin] Kiểm duyệt và ẩn/hiện review' })

@@ -105,6 +105,15 @@ export class ReviewsService {
       .exec();
   }
 
+  async findAllForAdmin() {
+    return this.reviewModel
+      .find()
+      .populate('userId', 'fullName email')
+      .populate('productId', 'name')
+      .sort({ createdAt: -1 })
+      .exec();
+  }
+
   async getRatingSummary(productId: number) {
     const product = await this.productModel.findOne({ productId }).select('_id').exec();
     if (!product) {

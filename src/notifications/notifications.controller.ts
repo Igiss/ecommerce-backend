@@ -24,6 +24,14 @@ export class NotificationsController {
     return this.notificationsService.create(dto);
   }
 
+  @Post('broadcast')
+  @ApiOperation({ summary: '[Admin] Gửi thông báo tới tất cả người dùng' })
+  @Roles(Role.Admin)
+  broadcast(@Body() dto: CreateNotificationDto) {
+    const { userId, ...rest } = dto;
+    return this.notificationsService.broadcast(rest);
+  }
+
   @Get('me')
   @ApiOperation({ summary: '[User] Lấy danh sách thông báo của tài khoản đang đăng nhập' })
   findMine(@CurrentUser() user: JwtPayload) {

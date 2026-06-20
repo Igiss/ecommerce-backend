@@ -4,8 +4,9 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateNotificationDto {
   @ApiProperty({ description: 'MongoDB ObjectId của người nhận' })
+  @IsOptional()
   @IsMongoId()
-  userId: string;
+  userId?: string;
 
   @ApiProperty({ example: 'Đơn hàng đã được xác nhận' })
   @IsString()

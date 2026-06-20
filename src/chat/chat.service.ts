@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { ProductsService } from '../products/products.service';
 import { ChatDto } from './dto/chat.dto';
+import { getActivePrice } from '../common/helpers/price.helper';
 
 @Injectable()
 export class ChatService {
@@ -39,7 +40,7 @@ export class ChatService {
     const productContext = products.map((product) => ({
       id: product.productId,
       name: product.name,
-      price: product.salePrice ?? product.price,
+      price: getActivePrice(product),
       stock: product.stock,
       images: product.images,
     }));

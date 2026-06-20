@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Notification, NotificationDocument } from '../database/schemas/notification.schema';
+import { User, UserDocument } from '../database/schemas/user.schema';
 import { CreateNotificationDto } from './dto/create-notification.dto';
 
 @Injectable()
@@ -9,6 +10,8 @@ export class NotificationsService {
   constructor(
     @InjectModel(Notification.name)
     private readonly notificationModel: Model<NotificationDocument>,
+    @InjectModel(User.name)
+    private readonly userModel: Model<UserDocument>,
   ) {}
 
   async create(dto: CreateNotificationDto) {
@@ -16,6 +19,16 @@ export class NotificationsService {
       ...dto,
       userId: new Types.ObjectId(dto.userId),
     });
+  }
+
+  async broadcast(dto: Omit<CreateNotificationDto, 'userId'>) {
+    const users = await this.userModel.find({ isActive: true }).select('_id').exec();
+    const notifications = users.map(u => ({
+      ...dto,
+      userId: u._id,
+    }));
+    await this.notificationModel.insertMany(notifications);
+    return { success: true, count: notifications.length };
   }
 
   async findMine(userId: string) {

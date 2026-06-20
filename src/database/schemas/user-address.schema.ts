@@ -23,7 +23,7 @@ export class UserAddress {
   @Prop({ required: true, trim: true })
   addressLine: string;
 
-  @Prop({ trim: true, default: '' })
+  @Prop({ required: true, trim: true })
   ward: string;
 
   @Prop({ required: true, trim: true })

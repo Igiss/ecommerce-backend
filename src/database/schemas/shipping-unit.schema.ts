@@ -5,7 +5,7 @@ export type ShippingUnitDocument = HydratedDocument<ShippingUnit>;
 
 /**
  * Profile của đơn vị vận chuyển (1-1 với User có role=shipping_unit).
- * coverageWards: danh sách phường/xã mà đơn vị này phụ trách giao hàng.
+ * coverageAreas: danh sách khu vực (tỉnh, phường/xã) mà đơn vị này phụ trách giao hàng.
  */
 @Schema({ timestamps: true })
 export class ShippingUnit {
@@ -15,20 +15,26 @@ export class ShippingUnit {
   @Prop({ required: true, trim: true })
   companyName: string;
 
-  /** Danh sách phường/xã phụ trách, VD: ['Phường Bến Nghé', 'Phường Bến Thành'] */
-  @Prop({ type: [String], default: [] })
-  coverageWards: string[];
+  /** Danh sách khu vực phụ trách */
+  @Prop({ type: [{ province: String, ward: String }], default: [] })
+  coverageAreas: { province: string; ward: string }[];
 
   @Prop({ trim: true })
   contactPhone?: string;
 
   @Prop({ trim: true })
   address?: string;
+
+  @Prop({ trim: true })
+  ward?: string;
+
+  @Prop({ trim: true })
+  province?: string;
 }
 
 export const ShippingUnitSchema = SchemaFactory.createForClass(ShippingUnit);
 
-ShippingUnitSchema.index({ coverageWards: 1 });
+ShippingUnitSchema.index({ 'coverageAreas.province': 1, 'coverageAreas.ward': 1 });
 
 ShippingUnitSchema.set('toJSON', {
   virtuals: true,

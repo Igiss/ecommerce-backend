@@ -1,6 +1,17 @@
-import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString } from 'class-validator';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { IsVietnamPhone } from '../../common/decorators/is-vietnam-phone.decorator';
+
+class ShipperCoverageAreaDto {
+  @ApiProperty({ example: 'TP. Hồ Chí Minh' })
+  @IsString()
+  province: string;
+
+  @ApiProperty({ example: 'Phường Bến Nghé' })
+  @IsString()
+  ward: string;
+}
 
 export class UpdateShipperDto {
   @ApiPropertyOptional({ example: 'Nguyễn Văn Tài' })
@@ -29,10 +40,11 @@ export class UpdateShipperDto {
   licensePlate?: string;
 
   @ApiPropertyOptional({
-    example: 'Phường Bến Nghé',
-    description: 'Phường/xã mà shipper phụ trách giao hàng',
+    example: { province: 'TP. Hồ Chí Minh', ward: 'Phường Bến Nghé' },
+    description: 'Khu vực mà shipper phụ trách giao hàng',
   })
   @IsOptional()
-  @IsString()
-  coverageWard?: string;
+  @ValidateNested()
+  @Type(() => ShipperCoverageAreaDto)
+  coverageArea?: ShipperCoverageAreaDto;
 }

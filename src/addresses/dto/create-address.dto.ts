@@ -20,7 +20,7 @@ export class CreateAddressDto {
   addressLine: string;
 
   @ApiProperty({
-    example: 'Phường Sài Gòn',
+    example: 'Phường Bến Nghé',
     description: 'Xã, phường hoặc đặc khu theo đơn vị hành chính mới',
   })
   @IsString()

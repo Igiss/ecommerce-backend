@@ -45,7 +45,7 @@ export class AddressesService {
 
     // Kiểm tra phủ sóng nếu là địa chỉ mặc định
     const coverageWarning = isDefault
-      ? await this.buildCoverageWarning(dto.ward)
+      ? await this.buildCoverageWarning(dto.province, dto.ward)
       : null;
 
     return { address, coverageWarning };
@@ -67,11 +67,12 @@ export class AddressesService {
     Object.assign(existing, dto);
     const address = await existing.save();
 
-    // Kiểm tra phủ sóng nếu update thành mặc định hoặc update ward của địa chỉ mặc định
+    // Kiểm tra phủ sóng nếu update thành mặc định hoặc update ward/province của địa chỉ mặc định
     const isDefault = dto.isDefault || existing.isDefault;
+    const province = dto.province ?? existing.province;
     const ward = dto.ward ?? existing.ward;
     const coverageWarning = isDefault
-      ? await this.buildCoverageWarning(ward)
+      ? await this.buildCoverageWarning(province, ward)
       : null;
 
     return { address, coverageWarning };
@@ -89,7 +90,7 @@ export class AddressesService {
     await address.save();
 
     // Kiểm tra phủ sóng phường/xã mới được set mặc định
-    const coverageWarning = await this.buildCoverageWarning(address.ward);
+    const coverageWarning = await this.buildCoverageWarning(address.province, address.ward);
 
     return { address, coverageWarning };
   }
@@ -117,22 +118,22 @@ export class AddressesService {
   }
 
   /**
-   * Kiểm tra xem phường/xã có ShippingUnit phụ trách không.
+   * Kiểm tra xem khu vực (tỉnh, phường/xã) có ShippingUnit phụ trách không.
    * Trả về null nếu có đơn vị phụ trách, trả về chuỗi cảnh báo nếu chưa có.
    */
-  async checkCoverageByWard(ward: string): Promise<{ covered: boolean; message: string | null }> {
-    const unit = await this.shippingUnitsService.findUnitByWard(ward);
+  async checkCoverageByArea(province: string, ward: string): Promise<{ covered: boolean; message: string | null }> {
+    const unit = await this.shippingUnitsService.findUnitByArea(province, ward);
     if (unit) {
       return { covered: true, message: null };
     }
     return {
       covered: false,
-      message: `Khu vực "${ward}" hiện chưa có đơn vị vận chuyển phụ trách. Đơn hàng đến địa chỉ này có thể không được giao tự động — admin sẽ xử lý thủ công.`,
+      message: `Khu vực "${ward}, ${province}" hiện chưa có đơn vị vận chuyển phụ trách. Đơn hàng đến địa chỉ này có thể không được giao tự động — admin sẽ xử lý thủ công.`,
     };
   }
 
-  private async buildCoverageWarning(ward: string): Promise<string | null> {
-    const { message } = await this.checkCoverageByWard(ward);
+  private async buildCoverageWarning(province: string, ward: string): Promise<string | null> {
+    const { message } = await this.checkCoverageByArea(province, ward);
     return message;
   }
 

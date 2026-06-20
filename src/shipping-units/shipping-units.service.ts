@@ -43,7 +43,7 @@ export class ShippingUnitsService {
     const unit = await this.shippingUnitModel
       .findOneAndUpdate(
         { userId: new Types.ObjectId(shippingUnitUserId) },
-        { coverageWards: dto.coverageWards },
+        { coverageAreas: dto.coverageAreas },
         { new: true },
       )
       .exec();
@@ -109,7 +109,7 @@ export class ShippingUnitsService {
       shippingUnitId: new Types.ObjectId(shippingUnitUserId),
       vehicleType: dto.vehicleType,
       licensePlate: dto.licensePlate,
-      coverageWard: dto.coverageWard,
+      coverageArea: dto.coverageArea,
     });
 
     const { password: _pw, ...publicShipper } = shipper.toJSON() as Record<string, unknown>;
@@ -173,7 +173,7 @@ export class ShippingUnitsService {
     }
 
     // Tách các trường thuộc User vs ShipperProfile
-    const { fullName, phone, address, vehicleType, licensePlate, coverageWard } = dto;
+    const { fullName, phone, address, vehicleType, licensePlate, coverageArea } = dto;
 
     // Cập nhật User fields (fullName, phone, address)
     const userUpdate: Record<string, unknown> = {};
@@ -185,11 +185,11 @@ export class ShippingUnitsService {
       await this.userModel.findByIdAndUpdate(shipperId, userUpdate).exec();
     }
 
-    // Cập nhật ShipperProfile fields (vehicleType, licensePlate, coverageWard)
+    // Cập nhật ShipperProfile fields (vehicleType, licensePlate, coverageArea)
     const profileUpdate: Record<string, unknown> = {};
     if (vehicleType !== undefined) profileUpdate.vehicleType = vehicleType;
     if (licensePlate !== undefined) profileUpdate.licensePlate = licensePlate;
-    if (coverageWard !== undefined) profileUpdate.coverageWard = coverageWard;
+    if (coverageArea !== undefined) profileUpdate.coverageArea = coverageArea;
 
     if (Object.keys(profileUpdate).length > 0) {
       Object.assign(profile, profileUpdate);
@@ -269,9 +269,9 @@ export class ShippingUnitsService {
    * Tìm ShippingUnit phụ trách phường/xã của đơn hàng.
    * Dùng khi admin confirm đơn → tự động gán shippingUnitId.
    */
-  async findUnitByWard(ward: string): Promise<ShippingUnitDocument | null> {
+  async findUnitByArea(province: string, ward: string): Promise<ShippingUnitDocument | null> {
     return this.shippingUnitModel
-      .findOne({ coverageWards: ward })
+      .findOne({ coverageAreas: { $elemMatch: { province, ward } } })
       .exec();
   }
 
@@ -286,7 +286,8 @@ export class ShippingUnitsService {
    *
    * @returns { shipperId, shipperName } hoặc null nếu không có shipper phù hợp
    */
-  async autoAssignShipperByWard(
+  async autoAssignShipperByArea(
+    province: string,
     ward: string,
     shippingUnitUserId: string,
   ): Promise<{ shipperId: Types.ObjectId; shipperName: string } | null> {
@@ -294,7 +295,8 @@ export class ShippingUnitsService {
     const profile = await this.shipperProfileModel
       .findOne({
         shippingUnitId: new Types.ObjectId(shippingUnitUserId),
-        coverageWard: ward,
+        'coverageArea.province': province,
+        'coverageArea.ward': ward,
         isAvailable: true,
       })
       .sort({ lastAssignedAt: 1 })  // null first, then oldest

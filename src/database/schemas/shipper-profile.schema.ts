@@ -26,9 +26,9 @@ export class ShipperProfile {
   @Prop({ default: true })
   isAvailable: boolean;
 
-  /** Phường/xã mà shipper phụ trách giao hàng */
-  @Prop({ trim: true })
-  coverageWard?: string;
+  /** Khu vực mà shipper phụ trách giao hàng */
+  @Prop({ type: { province: String, ward: String } })
+  coverageArea?: { province: string; ward: string };
 
   /** Lần cuối được tự động phân đơn (dùng cho round-robin) */
   @Prop()

@@ -12,8 +12,18 @@ export class UpdateShippingUnitDto {
   @IsString()
   contactPhone?: string;
 
-  @ApiPropertyOptional({ example: '123 Nguyễn Văn Linh, Q7, TP.HCM' })
+  @ApiPropertyOptional({ example: '123 Nguyễn Văn Linh' })
   @IsOptional()
   @IsString()
   address?: string;
+
+  @ApiPropertyOptional({ example: 'Phường Tân Phú' })
+  @IsOptional()
+  @IsString()
+  ward?: string;
+
+  @ApiPropertyOptional({ example: 'Thành phố Hồ Chí Minh' })
+  @IsOptional()
+  @IsString()
+  province?: string;
 }

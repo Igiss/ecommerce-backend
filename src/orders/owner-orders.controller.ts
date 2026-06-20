@@ -83,4 +83,17 @@ export class OwnerOrdersController {
   ) {
     return this.ordersService.ownerHandOverToShipping(id, user.sub);
   }
+
+  @Patch(':id/items/:itemId/return-status')
+  @ApiOperation({ summary: '[Owner] Cập nhật trạng thái đổi trả của một sản phẩm' })
+  @ApiParam({ name: 'id', description: 'MongoDB ObjectId của đơn hàng' })
+  @ApiParam({ name: 'itemId', description: 'MongoDB ObjectId của sản phẩm (hoặc custom design)' })
+  updateReturnStatus(
+    @CurrentUser() user: JwtPayload,
+    @Param('id', ParseMongoIdPipe) id: string,
+    @Param('itemId', ParseMongoIdPipe) itemId: string,
+    @Body() dto: import('./dto/update-return-status.dto').UpdateReturnStatusDto,
+  ) {
+    return this.ordersService.updateReturnStatus(id, user.sub, itemId, dto);
+  }
 }

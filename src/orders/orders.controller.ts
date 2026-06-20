@@ -114,4 +114,18 @@ export class OrdersController {
   ) {
     return this.ordersService.overrideShippingUnit(id, dto.shippingUnitId);
   }
+
+  @Post(":id/items/:itemId/return")
+  @ApiOperation({ summary: "[User] Yêu cầu đổi trả một sản phẩm trong đơn hàng" })
+  @ApiParam({ name: "id", description: "MongoDB ObjectId của đơn hàng" })
+  @ApiParam({ name: "itemId", description: "MongoDB ObjectId của sản phẩm (hoặc custom design)" })
+  @Roles(Role.User)
+  requestReturn(
+    @CurrentUser() user: JwtPayload,
+    @Param("id", ParseMongoIdPipe) id: string,
+    @Param("itemId", ParseMongoIdPipe) itemId: string,
+    @Body() dto: import('./dto/request-return.dto').RequestReturnDto,
+  ) {
+    return this.ordersService.requestReturn(id, user.sub, itemId, dto);
+  }
 }

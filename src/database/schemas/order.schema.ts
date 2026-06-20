@@ -13,6 +13,14 @@ export enum PaymentMethod {
   VNPay   = 'VNPAY',
 }
 
+export enum ReturnStatus {
+  None = 'NONE',
+  Requested = 'REQUESTED',
+  Approved = 'APPROVED',
+  Rejected = 'REJECTED',
+  Returned = 'RETURNED',
+}
+
 @Schema({ _id: false })
 export class OrderItem {
   @Prop({ type: Types.ObjectId, ref: 'Product' })
@@ -55,6 +63,16 @@ export class OrderItem {
   /** Thời điểm owner xác nhận đã giao cho đơn vị vận chuyển */
   @Prop()
   handedOverAt?: Date;
+
+  // === Return & Refund ===
+  @Prop({ enum: Object.values(ReturnStatus), default: ReturnStatus.None })
+  returnStatus: ReturnStatus;
+
+  @Prop({ trim: true })
+  returnReason?: string;
+
+  @Prop({ type: [String], default: [] })
+  returnImages: string[];
 }
 
 export const OrderItemSchema = SchemaFactory.createForClass(OrderItem);

@@ -9,7 +9,7 @@ import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Role } from '../common/enums/role.enum';
-import { Order, OrderDocument } from '../database/schemas/order.schema';
+import { Order, OrderDocument, ReturnStatus } from '../database/schemas/order.schema';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { CustomDesign, CustomDesignDocument } from '../database/schemas/custom-design.schema';
 import { ShippingUnit, ShippingUnitDocument } from '../database/schemas/shipping-unit.schema';
@@ -18,7 +18,10 @@ import { UpdateAdminOrderStatusDto } from './dto/update-admin-order-status.dto';
 import { UpdateOrderStatusDto } from './dto/update-order-status.dto';
 import { PickupOrderDto } from './dto/pickup-order.dto';
 import { CouponsService } from '../coupons/coupons.service';
+import { getActivePrice } from '../common/helpers/price.helper';
 import { ShippingUnitsService } from '../shipping-units/shipping-units.service';
+import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
+import { InventoryLogType } from '../database/schemas/inventory-log.schema';
 
 @Injectable()
 export class OrdersService {
@@ -29,6 +32,7 @@ export class OrdersService {
     @InjectModel(ShippingUnit.name) private readonly shippingUnitModel: Model<ShippingUnitDocument>,
     private readonly couponsService: CouponsService,
     private readonly shippingUnitsService: ShippingUnitsService,
+    private readonly inventoryLogsService: InventoryLogsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -73,7 +77,7 @@ export class OrdersService {
           }
         }
 
-        const price = product.salePrice ?? product.price;
+        const price = getActivePrice(product);
         pricedItems.push({
           productId: product._id,
           categoryId: product.categoryId,
@@ -126,6 +130,20 @@ export class OrdersService {
           throw error;
         }
       }
+
+      // Log inventory
+      await Promise.all(
+        pricedItems.map((item) =>
+          this.inventoryLogsService.createLog(
+            item.productId,
+            -item.quantity,
+            InventoryLogType.SALE,
+            orderId,
+            `Order ${orderId}`,
+          ),
+        ),
+      );
+
       return order;
     } catch (error) {
       await Promise.all(
@@ -187,12 +205,13 @@ export class OrdersService {
       throw new BadRequestException('Only pending orders can be confirmed');
     }
 
+    const province = order.shippingAddress.province;
     const ward = order.shippingAddress.ward;
     const now = new Date();
 
     // Bước 1: Tìm ShippingUnit phụ trách phường/xã
     const shippingUnit = await this.shippingUnitModel
-      .findOne({ coverageWards: ward })
+      .findOne({ coverageAreas: { $elemMatch: { province, ward } } })
       .exec();
 
     if (!shippingUnit) {
@@ -207,13 +226,14 @@ export class OrdersService {
         autoAssignment: {
           shippingUnit: false,
           shipper: false,
-          message: `Khu vực "${ward}" chưa có đơn vị vận chuyển phụ trách. Admin cần gán thủ công.`,
+          message: `Khu vực "${ward}, ${province}" chưa có đơn vị vận chuyển phụ trách. Admin cần gán thủ công.`,
         },
       };
     }
 
     // Bước 2: Tìm Shipper round-robin theo ward
-    const shipperResult = await this.shippingUnitsService.autoAssignShipperByWard(
+    const shipperResult = await this.shippingUnitsService.autoAssignShipperByArea(
+      province,
       ward,
       shippingUnit.userId.toString(),
     );
@@ -308,6 +328,17 @@ export class OrdersService {
       order.couponId
         ? this.couponsService.releaseUsage(order._id)
         : Promise.resolve(),
+      ...order.items
+        .filter((item) => Boolean(item.productId))
+        .map((item) =>
+          this.inventoryLogsService.createLog(
+            item.productId!,
+            item.quantity,
+            InventoryLogType.CANCEL_ORDER,
+            order._id,
+            `Order ${order._id} cancelled`,
+          ),
+        ),
     ]);
     return order.save();
   }
@@ -457,6 +488,100 @@ export class OrdersService {
         arrayFilters: [{ 'ownerItem.ownerId': new Types.ObjectId(ownerId) }],
       },
     ).exec();
+
+    return this.findOneByOwner(orderId, ownerId);
+  }
+
+  /** [User] Gửi yêu cầu đổi trả */
+  async requestReturn(orderId: string, userId: string, itemId: string, dto: import('./dto/request-return.dto').RequestReturnDto) {
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      userId: new Types.ObjectId(userId),
+      orderStatus: OrderStatus.Completed, // Chỉ cho đổi trả khi đã hoàn thành
+    }).exec();
+
+    if (!order) {
+      throw new NotFoundException('Order not found or not eligible for return');
+    }
+
+    const item = order.items.find(i => i.productId?.toString() === itemId || i.customDesignId?.toString() === itemId);
+    if (!item) {
+      throw new NotFoundException('Item not found in order');
+    }
+
+    if (item.returnStatus !== ReturnStatus.None && item.returnStatus !== ReturnStatus.Rejected) {
+      throw new BadRequestException('Return already requested for this item');
+    }
+
+    await this.orderModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(orderId) },
+      {
+        $set: {
+          'items.$[item].returnStatus': ReturnStatus.Requested,
+          'items.$[item].returnReason': dto.returnReason,
+          'items.$[item].returnImages': dto.returnImages || [],
+        },
+      },
+      {
+        arrayFilters: [{ 
+          $or: [
+            { 'item.productId': new Types.ObjectId(itemId) },
+            { 'item.customDesignId': new Types.ObjectId(itemId) }
+          ]
+        }],
+      },
+    ).exec();
+
+    return this.orderModel.findById(orderId).exec();
+  }
+
+  /** [Owner] Cập nhật trạng thái đổi trả */
+  async updateReturnStatus(orderId: string, ownerId: string, itemId: string, dto: import('./dto/update-return-status.dto').UpdateReturnStatusDto) {
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      'items.ownerId': new Types.ObjectId(ownerId),
+    }).exec();
+
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+
+    const item = order.items.find(i => 
+      (i.productId?.toString() === itemId || i.customDesignId?.toString() === itemId) && 
+      i.ownerId.toString() === ownerId
+    );
+
+    if (!item) {
+      throw new NotFoundException('Item not found or does not belong to you');
+    }
+
+    await this.orderModel.findOneAndUpdate(
+      { _id: new Types.ObjectId(orderId) },
+      {
+        $set: {
+          'items.$[item].returnStatus': dto.returnStatus,
+        },
+      },
+      {
+        arrayFilters: [{ 
+          $or: [
+            { 'item.productId': new Types.ObjectId(itemId) },
+            { 'item.customDesignId': new Types.ObjectId(itemId) }
+          ]
+        }],
+      },
+    ).exec();
+
+    // Nếu Owner xác nhận hàng đã trả về kho -> Log inventory
+    if (dto.returnStatus === ReturnStatus.Returned && item.productId) {
+      await this.inventoryLogsService.createLog(
+        item.productId,
+        item.quantity,
+        InventoryLogType.RETURN,
+        order._id,
+        `Item returned for Order ${order._id}`
+      );
+    }
 
     return this.findOneByOwner(orderId, ownerId);
   }

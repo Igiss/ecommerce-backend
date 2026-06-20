@@ -7,6 +7,7 @@ import { ProductsController } from './products.controller';
 import { OwnerProductsController } from './owner-products.controller';
 import { ProductsService } from './products.service';
 import { UploadModule } from '../upload/upload.module';
+import { InventoryLogsModule } from '../inventory-logs/inventory-logs.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { UploadModule } from '../upload/upload.module';
     ]),
     CategoriesModule,
     UploadModule,
+    InventoryLogsModule,
   ],
   controllers: [ProductsController, OwnerProductsController],
   providers: [ProductsService],

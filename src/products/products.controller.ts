@@ -63,18 +63,17 @@ export class ProductsController {
     return this.productsService.findAll(query);
   }
 
-  @Get(':id')
+  @Get(':idOrSlug')
   @ApiOperation({ summary: '[Public] Xem chi tiết sản phẩm' })
   @ApiParam({
-    name: 'id',
-    description: 'ID số của sản phẩm',
-    example: 1,
-    schema: { type: 'integer', minimum: 1 },
+    name: 'idOrSlug',
+    description: 'ID số của sản phẩm hoặc slug',
+    example: '1',
+    schema: { type: 'string' },
   })
-  @ApiBadRequestResponse({ description: 'ID phải là số nguyên dương' })
   @ApiNotFoundResponse({ description: 'Không tìm thấy sản phẩm' })
-  findOne(@Param('id', ParsePositiveIntPipe) id: number) {
-    return this.productsService.findOne(id);
+  findOne(@Param('idOrSlug') idOrSlug: string) {
+    return this.productsService.findOne(idOrSlug);
   }
 
   @Patch(':id')

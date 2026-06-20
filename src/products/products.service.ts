@@ -11,6 +11,8 @@ import { Product, ProductDocument, ProductStatus } from '../database/schemas/pro
 import { Counter, CounterDocument } from '../database/schemas/counter.schema';
 import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
 import { UploadService } from '../upload/upload.service';
+import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
+import { InventoryLogType } from '../database/schemas/inventory-log.schema';
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
@@ -19,6 +21,7 @@ export class ProductsService implements OnModuleInit {
     @InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly uploadService: UploadService,
+    private readonly inventoryLogsService: InventoryLogsService,
   ) {}
 
   async onModuleInit() {
@@ -43,7 +46,7 @@ export class ProductsService implements OnModuleInit {
         )
       : [];
 
-    return this.productModel.create({
+    const product = await this.productModel.create({
       _id: productObjectId,
       ...productData,
       images,
@@ -51,6 +54,18 @@ export class ProductsService implements OnModuleInit {
       slug,
       createdBy: new Types.ObjectId(createdBy),
     });
+
+    if (productData.stock) {
+      await this.inventoryLogsService.createLog(
+        productObjectId,
+        productData.stock,
+        InventoryLogType.RESTOCK,
+        undefined,
+        'Initial stock',
+      );
+    }
+
+    return product;
   }
 
   async findAll(query: ProductQueryDto) {
@@ -100,9 +115,36 @@ export class ProductsService implements OnModuleInit {
     return { items, meta: buildPaginationMeta(total, page, limit) };
   }
 
-  async findOne(id: number) {
+  async getInventoryLogsByOwner(ownerId: string, page: number = 1, limit: number = 10) {
+    // 1. Get all products created by this owner
+    const products = await this.productModel
+      .find({ createdBy: new Types.ObjectId(ownerId) })
+      .select('_id')
+      .exec();
+    
+    if (products.length === 0) {
+      return { items: [], meta: buildPaginationMeta(0, page, limit) };
+    }
+
+    const productIds = products.map((p) => p._id as Types.ObjectId);
+    
+    // 2. Get inventory logs for those products
+    return this.inventoryLogsService.getLogsByProducts(productIds, page, limit);
+  }
+
+  async findOne(idOrSlug: number | string) {
+    let query: any = { status: { $ne: ProductStatus.Deleted } };
+    
+    // Check if idOrSlug is a number (productId) or a string (slug)
+    const isNumeric = !isNaN(Number(idOrSlug));
+    if (isNumeric) {
+      query.productId = Number(idOrSlug);
+    } else {
+      query.slug = idOrSlug;
+    }
+
     const product = await this.productModel
-      .findOne({ productId: id, status: { $ne: ProductStatus.Deleted } })
+      .findOne(query)
       .populate('categoryId', 'name slug')
       .populate('createdBy', 'fullName email')
       .exec();
@@ -150,6 +192,17 @@ export class ProductsService implements OnModuleInit {
       throw new NotFoundException('Product not found');
     }
 
+    if (updateProductDto.stock !== undefined && updateProductDto.stock !== product.stock) {
+      const stockChange = updateProductDto.stock - product.stock;
+      await this.inventoryLogsService.createLog(
+        product._id,
+        stockChange,
+        InventoryLogType.UPDATE,
+        undefined,
+        'Admin updated stock',
+      );
+    }
+
     return updatedProduct;
   }
 
@@ -188,7 +241,7 @@ export class ProductsService implements OnModuleInit {
       );
     }
 
-    return this.productModel
+    const updatedProduct = await this.productModel
       .findOneAndUpdate(
         { _id: product._id, createdBy: new Types.ObjectId(ownerId) },
         updatePayload,
@@ -196,6 +249,19 @@ export class ProductsService implements OnModuleInit {
       )
       .populate('categoryId', 'name slug')
       .exec();
+
+    if (updateProductDto.stock !== undefined && updateProductDto.stock !== product.stock && updatedProduct) {
+      const stockChange = updateProductDto.stock - product.stock;
+      await this.inventoryLogsService.createLog(
+        product._id,
+        stockChange,
+        InventoryLogType.UPDATE,
+        undefined,
+        'Owner updated stock',
+      );
+    }
+
+    return updatedProduct;
   }
 
   async remove(id: number) {

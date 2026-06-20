@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument } from 'mongoose';
+import { SeoData, SeoDataSchema } from './seo.schema';
 
 export type CategoryDocument = HydratedDocument<Category>;
 export type CategoryStatus = 'active' | 'inactive';
@@ -17,6 +18,9 @@ export class Category {
 
   @Prop({ enum: ['active', 'inactive'], default: 'active' })
   status: CategoryStatus;
+
+  @Prop({ type: SeoDataSchema, default: {} })
+  seo: SeoData;
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);

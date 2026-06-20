@@ -1,7 +1,8 @@
-import { IsIn, IsOptional, IsString } from 'class-validator';
+import { IsIn, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { CategoryStatus } from '../../database/schemas/category.schema';
-
+import { SeoDataDto } from '../../common/dto/seo.dto';
 export class CreateCategoryDto {
   @ApiProperty({ example: 'Cốc sứ' })
   @IsString()
@@ -21,4 +22,10 @@ export class CreateCategoryDto {
   @IsOptional()
   @IsIn(['active', 'inactive'])
   status?: CategoryStatus;
+
+  @ApiPropertyOptional({ type: () => SeoDataDto })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SeoDataDto)
+  seo?: SeoDataDto;
 }

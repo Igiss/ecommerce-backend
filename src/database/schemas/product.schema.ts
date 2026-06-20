@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { SeoData, SeoDataSchema } from './seo.schema';
 
 export type ProductDocument = HydratedDocument<Product>;
 
@@ -107,6 +108,12 @@ export class Product {
   @Prop({ min: 0 })
   salePrice?: number;
 
+  @Prop()
+  saleStartDate?: Date;
+
+  @Prop()
+  saleEndDate?: Date;
+
   @Prop({ min: 0, select: false })
   costPrice?: number;
 
@@ -157,6 +164,9 @@ export class Product {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy: Types.ObjectId;
+
+  @Prop({ type: SeoDataSchema, default: {} })
+  seo: SeoData;
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

@@ -8,6 +8,7 @@ import {
   IsString,
   Min,
   ValidateNested,
+  IsDate,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ProductStatus, ProductType } from '../../database/schemas/product.schema';
@@ -70,6 +71,18 @@ export class CreateProductDto {
   @IsNumber()
   @Min(0)
   salePrice?: number;
+
+  @ApiPropertyOptional({ example: '2024-01-01T00:00:00Z' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  saleStartDate?: Date;
+
+  @ApiPropertyOptional({ example: '2024-12-31T23:59:59Z' })
+  @IsOptional()
+  @Type(() => Date)
+  @IsDate()
+  saleEndDate?: Date;
 
   @ApiPropertyOptional({ example: 80000, minimum: 0 })
   @IsOptional()

@@ -144,7 +144,14 @@ export class OrdersService {
         ),
       );
 
-      return order;
+      // Tự động phân bổ vận chuyển thay vì chờ Admin duyệt
+      try {
+        await this.updateStatus(orderId.toString(), {} as any);
+      } catch (err) {
+        console.error('Failed to auto-assign shipping:', err);
+      }
+
+      return this.orderModel.findById(orderId).exec();
     } catch (error) {
       await Promise.all(
         reservedItems.map((item) =>
@@ -159,7 +166,7 @@ export class OrdersService {
   }
 
   async findMine(userId: string) {
-    return this.orderModel.find({ userId }).sort({ createdAt: -1 }).exec();
+    return this.orderModel.find({ userId: new Types.ObjectId(userId) }).sort({ createdAt: -1 }).exec();
   }
 
   async findAll() {
@@ -396,6 +403,10 @@ export class OrdersService {
 
     order.orderStatus = OrderStatus.Completed;
     order.completedAt = new Date();
+
+    order.items.forEach(item => {
+      item.fulfillmentStatus = OrderStatus.Completed;
+    });
 
     // Đơn COD: shipper đã nhận tiền khi giao → tự động đánh dấu đã thanh toán
     if (order.paymentMethod === 'COD' && order.paymentStatus !== PaymentStatus.Paid) {

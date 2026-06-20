@@ -167,6 +167,9 @@ export class Product {
 
   @Prop({ type: SeoDataSchema, default: {} })
   seo: SeoData;
+
+  @Prop({ type: [Number], select: false })
+  embedding?: number[];
 }
 
 export const ProductSchema = SchemaFactory.createForClass(Product);

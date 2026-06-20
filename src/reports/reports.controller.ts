@@ -47,6 +47,13 @@ export class ReportsController {
     return this.reportsService.getTopProducts(this.getOwnerId(user), query);
   }
 
+  @Get('ai-trends')
+  @ApiOperation({ summary: '[Admin/Owner] Nhận báo cáo phân tích xu hướng mua hàng từ AI' })
+  async getAiTrendReport(@CurrentUser() user: JwtPayload) {
+    const report = await this.reportsService.getAiTrendReport(this.getOwnerId(user));
+    return { report };
+  }
+
   private getOwnerId(user: JwtPayload) {
     return user.role === Role.Owner ? user.sub : undefined;
   }

@@ -31,4 +31,10 @@ export class OwnerReportsController {
   getDashboard(@CurrentUser() user: JwtPayload) {
     return this.reportsService.getOwnerDashboard(user.sub);
   }
+
+  @Get('ai-trends')
+  @ApiOperation({ summary: '[Owner] Nhận báo cáo phân tích xu hướng mua hàng từ AI' })
+  getAiTrendReport(@CurrentUser() user: JwtPayload) {
+    return this.reportsService.getAiTrendReport(user.sub);
+  }
 }

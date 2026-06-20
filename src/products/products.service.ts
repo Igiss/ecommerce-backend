@@ -13,6 +13,7 @@ import { UploadTargetType, UploadType } from '../database/schemas/upload.schema'
 import { UploadService } from '../upload/upload.service';
 import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
 import { InventoryLogType } from '../database/schemas/inventory-log.schema';
+import { AiService } from '../ai/ai.service';
 
 @Injectable()
 export class ProductsService implements OnModuleInit {
@@ -22,6 +23,7 @@ export class ProductsService implements OnModuleInit {
     private readonly categoriesService: CategoriesService,
     private readonly uploadService: UploadService,
     private readonly inventoryLogsService: InventoryLogsService,
+    private readonly aiService: AiService,
   ) {}
 
   async onModuleInit() {
@@ -55,6 +57,13 @@ export class ProductsService implements OnModuleInit {
       createdBy: new Types.ObjectId(createdBy),
     });
 
+    // Tạo embedding ngầm định để tránh block response quá lâu
+    this.aiService.generateEmbedding(`${productData.name}. ${productData.description || ''}`).then(embedding => {
+      if (embedding.length > 0) {
+        this.productModel.findByIdAndUpdate(productObjectId, { embedding }).exec();
+      }
+    }).catch(err => console.error('Lỗi khi tạo embedding:', err));
+
     if (productData.stock) {
       await this.inventoryLogsService.createLog(
         productObjectId,
@@ -78,7 +87,7 @@ export class ProductsService implements OnModuleInit {
       this.productModel
         .find(filter)
         .populate('categoryId', 'name slug')
-        .populate('createdBy', 'fullName email')
+        .populate('createdBy', 'fullName email storeName storePhone')
         .sort({ [sortField]: sortOrder })
         .skip(skip)
         .limit(limit)
@@ -146,7 +155,7 @@ export class ProductsService implements OnModuleInit {
     const product = await this.productModel
       .findOne(query)
       .populate('categoryId', 'name slug')
-      .populate('createdBy', 'fullName email')
+      .populate('createdBy', 'fullName email storeName storePhone')
       .exec();
 
     if (!product) {
@@ -182,10 +191,21 @@ export class ProductsService implements OnModuleInit {
       );
     }
 
+    // Cập nhật lại embedding nếu thay đổi name hoặc description
+    if (updateProductDto.name !== undefined || updateProductDto.description !== undefined) {
+      const newName = updateProductDto.name ?? product.name;
+      const newDesc = updateProductDto.description ?? product.description;
+      this.aiService.generateEmbedding(`${newName}. ${newDesc || ''}`).then(embedding => {
+        if (embedding.length > 0) {
+          this.productModel.findByIdAndUpdate(product._id, { embedding }).exec();
+        }
+      }).catch(err => console.error('Lỗi cập nhật embedding:', err));
+    }
+
     const updatedProduct = await this.productModel
       .findByIdAndUpdate(product._id, updatePayload, { new: true })
       .populate('categoryId', 'name slug')
-      .populate('createdBy', 'fullName email')
+      .populate('createdBy', 'fullName email storeName storePhone')
       .exec();
 
     if (!updatedProduct) {
@@ -239,6 +259,17 @@ export class ProductsService implements OnModuleInit {
         UploadTargetType.Product,
         product._id,
       );
+    }
+
+    // Cập nhật lại embedding nếu thay đổi name hoặc description
+    if (updateProductDto.name !== undefined || updateProductDto.description !== undefined) {
+      const newName = updateProductDto.name ?? product.name;
+      const newDesc = updateProductDto.description ?? product.description;
+      this.aiService.generateEmbedding(`${newName}. ${newDesc || ''}`).then(embedding => {
+        if (embedding.length > 0) {
+          this.productModel.findByIdAndUpdate(product._id, { embedding }).exec();
+        }
+      }).catch(err => console.error('Lỗi cập nhật embedding:', err));
     }
 
     const updatedProduct = await this.productModel
@@ -306,6 +337,61 @@ export class ProductsService implements OnModuleInit {
     }
 
     return this.productModel.find(filter).limit(10).exec();
+  }
+
+  async suggestProducts(queryText: string) {
+    if (!queryText || queryText.trim().length < 2) return [];
+
+    const embedding = await this.aiService.generateEmbedding(queryText);
+    if (embedding.length > 0) {
+      // Dùng Vector Search của MongoDB Atlas
+      try {
+        const results = await this.productModel.aggregate([
+          {
+            $vectorSearch: {
+              index: "vector_index",
+              path: "embedding",
+              queryVector: embedding,
+              numCandidates: 100,
+              limit: 5
+            }
+          },
+          {
+            $match: { status: ProductStatus.Active }
+          },
+          {
+            $project: {
+              _id: 1,
+              productId: 1,
+              name: 1,
+              slug: 1,
+              price: 1,
+              images: 1,
+              score: { $meta: "vectorSearchScore" }
+            }
+          }
+        ]).exec();
+        
+        if (results && results.length > 0) {
+          return results.map(p => ({ ...p, id: p.productId }));
+        }
+      } catch (err) {
+        console.error('Vector search failed, falling back to text search:', (err as Error).message);
+      }
+    }
+
+    // Fallback: Text search
+    const filter: FilterQuery<ProductDocument> = {
+      status: ProductStatus.Active,
+      $text: { $search: queryText }
+    };
+    const fallbackResults = await this.productModel.find(filter)
+      .limit(5)
+      .select('_id productId name slug price images')
+      .lean()
+      .exec();
+      
+    return fallbackResults.map(p => ({ ...p, id: p.productId }));
   }
 
   private buildFilter(query: ProductQueryDto) {

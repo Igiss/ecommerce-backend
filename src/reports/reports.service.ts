@@ -7,6 +7,7 @@ import { Product, ProductDocument } from '../database/schemas/product.schema';
 import { Coupon, CouponDocument } from '../database/schemas/coupon.schema';
 import { User, UserDocument } from '../database/schemas/user.schema';
 import { ReportDateQueryDto } from './dto/report-date-query.dto';
+import { AiService } from '../ai/ai.service';
 
 type OrderDateFilter = {
   createdAt?: {
@@ -22,6 +23,7 @@ export class ReportsService {
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     @InjectModel(Coupon.name) private readonly couponModel: Model<CouponDocument>,
+    private readonly aiService: AiService,
   ) {}
 
   async getOwnerDashboard(ownerId: string) {
@@ -225,6 +227,11 @@ export class ReportsService {
   async getTopProducts(ownerId?: string, query: ReportDateQueryDto = {}) {
     const ownerProductIds = ownerId ? await this.getOwnerProductIds(ownerId) : undefined;
     return this.aggregateTopProducts(ownerProductIds, this.buildOrderDateFilter(query));
+  }
+
+  async getAiTrendReport(ownerId?: string) {
+    const data = await this.getDashboard(ownerId);
+    return this.aiService.generateTrendReport(data);
   }
 
   private aggregateTopProducts(

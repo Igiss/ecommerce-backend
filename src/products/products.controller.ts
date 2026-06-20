@@ -63,6 +63,13 @@ export class ProductsController {
     return this.productsService.findAll(query);
   }
 
+  @Get('suggestions')
+  @ApiOperation({ summary: '[Public] Gợi ý tìm kiếm ngữ nghĩa bằng AI' })
+  async getSuggestions(@Query('q') q: string) {
+    if (!q) return [];
+    return this.productsService.suggestProducts(q);
+  }
+
   @Get(':idOrSlug')
   @ApiOperation({ summary: '[Public] Xem chi tiết sản phẩm' })
   @ApiParam({

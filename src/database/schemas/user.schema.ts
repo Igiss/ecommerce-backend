@@ -45,6 +45,19 @@ export class User {
 
   @Prop({ type: String, default: '' })
   address: string;
+
+  // --- Owner specific fields ---
+  @Prop({ default: false })
+  isRequestingOwner: boolean;
+
+  @Prop({ trim: true })
+  storeName?: string;
+
+  @Prop({ trim: true })
+  storePhone?: string;
+
+  @Prop({ type: String })
+  storeAddress?: string;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

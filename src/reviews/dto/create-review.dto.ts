@@ -12,11 +12,9 @@ import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateReviewDto {
-  @ApiProperty({ example: 1, minimum: 1, description: 'ID số của sản phẩm' })
-  @Type(() => Number)
-  @IsNumber()
-  @Min(1)
-  productId: number;
+  @ApiProperty({ description: 'MongoDB ObjectId của sản phẩm' })
+  @IsMongoId()
+  productId: string;
 
   @ApiProperty({ description: 'MongoDB ObjectId của đơn hàng' })
   @IsMongoId()

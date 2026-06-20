@@ -8,6 +8,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
 import { User, UserDocument } from '../database/schemas/user.schema';
+import { Role } from '../common/enums/role.enum';
 import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
 import { UploadService } from '../upload/upload.service';
 
@@ -109,6 +110,34 @@ export class UsersService {
     return user;
   }
 
+  async requestOwner(id: string, storeName: string, storePhone: string, storeAddress: string) {
+    const user = await this.userModel
+      .findByIdAndUpdate(
+        id,
+        {
+          isRequestingOwner: true,
+          storeName,
+          storePhone,
+          storeAddress,
+        },
+        { new: true },
+      )
+      .exec();
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    return { message: 'Yêu cầu đăng ký Kênh Người Bán đã được gửi thành công' };
+  }
+
+  async getPendingOwners() {
+    return this.userModel
+      .find({ isRequestingOwner: true, role: Role.User })
+      .sort({ updatedAt: -1 })
+      .exec();
+  }
+
   async updateStatus(id: string, updateUserStatusDto: UpdateUserStatusDto) {
     const isBlocked = updateUserStatusDto.status === 'blocked';
     const update = isBlocked
@@ -135,8 +164,13 @@ export class UsersService {
   }
 
   async updateRole(id: string, updateUserRoleDto: UpdateUserRoleDto) {
+    const updateData: any = { role: updateUserRoleDto.role };
+    if (updateUserRoleDto.role === Role.Owner) {
+      updateData.isRequestingOwner = false;
+    }
+
     const user = await this.userModel
-      .findByIdAndUpdate(id, { role: updateUserRoleDto.role }, { new: true })
+      .findByIdAndUpdate(id, updateData, { new: true })
       .exec();
 
     if (!user) {
@@ -158,7 +192,6 @@ export class UsersService {
   async recordLogin(id: string) {
     await this.userModel.updateOne({ _id: id }, { lastLoginAt: new Date() }).exec();
   }
-
   toPublicUser(user: UserDocument | User): PublicUser {
     const plainUser = typeof (user as UserDocument).toJSON === 'function'
       ? (user as UserDocument).toJSON()

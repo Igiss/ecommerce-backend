@@ -29,7 +29,7 @@ export class ReviewsService {
 
   async create(userId: string, dto: CreateReviewDto) {
     const [product, order] = await Promise.all([
-      this.productModel.findOne({ productId: dto.productId }).exec(),
+      this.productModel.findById(dto.productId).exec(),
       this.orderModel.findById(dto.orderId).exec(),
     ]);
 

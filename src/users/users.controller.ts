@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -17,6 +17,7 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { UpdateUserRoleDto } from './dto/update-user-role.dto';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto';
+import { RequestOwnerDto } from './dto/request-owner.dto';
 import { UsersService } from './users.service';
 
 @ApiTags('Users')
@@ -33,6 +34,13 @@ export class UsersController {
     return this.usersService.findAll();
   }
 
+  @Get('pending-owners')
+  @ApiOperation({ summary: '[Admin] Lấy danh sách người dùng đang chờ duyệt lên Người bán' })
+  @Roles(Role.Admin)
+  getPendingOwners() {
+    return this.usersService.getPendingOwners();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: '[Admin] Xem chi tiết user theo id' })
   @Roles(Role.Admin)
@@ -47,6 +55,12 @@ export class UsersController {
   @ApiOperation({ summary: '[User] Cập nhật profile của tài khoản đang đăng nhập' })
   updateProfile(@CurrentUser() user: JwtPayload, @Body() dto: UpdateProfileDto) {
     return this.usersService.updateProfile(user.sub, dto);
+  }
+
+  @Post('request-owner')
+  @ApiOperation({ summary: '[User] Nâng cấp tài khoản lên Người bán' })
+  requestOwner(@CurrentUser() user: JwtPayload, @Body() dto: RequestOwnerDto) {
+    return this.usersService.requestOwner(user.sub, dto.storeName, dto.storePhone, dto.storeAddress);
   }
 
   @Patch(':id/status')

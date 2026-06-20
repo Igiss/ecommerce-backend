@@ -79,7 +79,10 @@ export async function runSeeder(argv = process.argv.slice(2)): Promise<void> {
       { userId: shippingUnitUserId },
       {
         companyName: 'Giao Hàng Nhanh Seed',
-        coverageWards: ['Phường Bến Nghé', 'Phường Bến Thành'],
+        coverageAreas: [
+          { province: 'Hồ Chí Minh', ward: 'Phường Bến Nghé' },
+          { province: 'Hồ Chí Minh', ward: 'Phường Bến Thành' },
+        ],
         contactPhone: '0909123456',
         address: '123 Đường Lê Lợi, Phường Bến Nghé, Quận 1, TP. HCM',
       },
@@ -104,6 +107,7 @@ export async function runSeeder(argv = process.argv.slice(2)): Promise<void> {
         shippingUnitId: shippingUnitUserId,
         vehicleType: 'Xe máy',
         licensePlate: '59-S1 123.45',
+        coverageArea: { province: 'Hồ Chí Minh', ward: 'Phường Bến Nghé' },
         isAvailable: true,
       },
       { upsert: true, new: true },

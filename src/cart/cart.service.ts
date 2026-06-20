@@ -5,6 +5,7 @@ import { Cart, CartDocument } from '../database/schemas/cart.schema';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { AddCartItemDto } from './dto/add-cart-item.dto';
 import { UpdateCartItemDto } from './dto/update-cart-item.dto';
+import { getActivePrice } from '../common/helpers/price.helper';
 
 @Injectable()
 export class CartService {
@@ -41,7 +42,7 @@ export class CartService {
         productId: product._id,
         customDesignId: dto.customDesignId ? new Types.ObjectId(dto.customDesignId) : undefined,
         quantity: dto.quantity,
-        price: product.salePrice ?? product.price,
+        price: getActivePrice(product),
         productName: product.name,
         image: product.images[0],
       });

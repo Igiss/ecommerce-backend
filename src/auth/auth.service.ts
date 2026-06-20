@@ -50,7 +50,7 @@ export class AuthService {
     await this.shippingUnitModel.create({
       userId: user.id,
       companyName: dto.companyName,
-      coverageWards: dto.coverageWards ?? [],
+      coverageAreas: dto.coverageAreas ?? [],
       contactPhone: dto.contactPhone,
       address: dto.address,
     });

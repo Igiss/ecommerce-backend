@@ -17,6 +17,8 @@ import { ShippingUnitsModule } from './shipping-units/shipping-units.module';
 import { UploadModule } from './upload/upload.module';
 import { UsersModule } from './users/users.module';
 import { AddressesModule } from './addresses/addresses.module';
+import { WishlistsModule } from './wishlists/wishlists.module';
+import { InventoryLogsModule } from './inventory-logs/inventory-logs.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { AddressesModule } from './addresses/addresses.module';
     ReportsModule,
     ChatModule,
     ShippingUnitsModule,
+    WishlistsModule,
+    InventoryLogsModule,
   ],
 })
 export class AppModule {}

@@ -35,13 +35,16 @@ export class NotificationsService {
   }
 
   async findMine(userId: string) {
-    return this.notificationModel.find({ userId }).sort({ createdAt: -1 }).exec();
+    return this.notificationModel
+      .find({ userId: new Types.ObjectId(userId) })
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async markAsRead(id: string, userId: string) {
     const notification = await this.notificationModel
       .findOneAndUpdate(
-        { _id: id, userId },
+        { _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) },
         { isRead: true, readAt: new Date() },
         { new: true },
       )
@@ -57,7 +60,7 @@ export class NotificationsService {
   async markAllAsRead(userId: string) {
     await this.notificationModel
       .updateMany(
-        { userId, isRead: false },
+        { userId: new Types.ObjectId(userId), isRead: false },
         { isRead: true, readAt: new Date() },
       )
       .exec();

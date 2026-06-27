@@ -47,7 +47,7 @@ NotificationSchema.set('toJSON', {
   versionKey: false,
   transform: (_doc, ret) => {
     const transformed = ret as unknown as Record<string, unknown>;
-    delete transformed._id;
+    transformed._id = ret._id ? ret._id.toString() : ret.id;
     return ret;
   },
 });

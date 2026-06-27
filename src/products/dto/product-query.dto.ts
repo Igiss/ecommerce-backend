@@ -38,6 +38,12 @@ export class ProductQueryDto {
   @IsMongoId()
   ownerId?: string;
 
+  @ApiPropertyOptional({ description: 'Lọc theo tên cửa hàng / chủ shop' })
+  @IsOptional()
+  @IsString()
+  storeName?: string;
+
+
 
   @ApiPropertyOptional({ minimum: 0, description: 'Giá thấp nhất' })
   @IsOptional()

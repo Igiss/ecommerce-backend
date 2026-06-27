@@ -62,6 +62,8 @@ export class User {
 
 export const UserSchema = SchemaFactory.createForClass(User);
 
+UserSchema.index({ storeName: 1 });
+
 UserSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,

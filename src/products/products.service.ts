@@ -9,6 +9,7 @@ import { ProductQueryDto } from './dto/product-query.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { Counter, CounterDocument } from '../database/schemas/counter.schema';
+import { User, UserDocument } from '../database/schemas/user.schema';
 import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
 import { UploadService } from '../upload/upload.service';
 import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
@@ -20,11 +21,13 @@ export class ProductsService implements OnModuleInit {
   constructor(
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>,
+    @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly uploadService: UploadService,
     private readonly inventoryLogsService: InventoryLogsService,
     private readonly aiService: AiService,
   ) {}
+
 
   async onModuleInit() {
     await this.assignIdsToExistingProducts();
@@ -80,7 +83,29 @@ export class ProductsService implements OnModuleInit {
   async findAll(query: ProductQueryDto) {
     const { page, limit, skip } = getPagination(query);
     const filter = this.buildFilter(query);
+
+    if (query.storeName) {
+      const users = await this.userModel
+        .find({
+          $or: [
+            { storeName: new RegExp(query.storeName, 'i') },
+            { fullName: new RegExp(query.storeName, 'i') },
+          ],
+        })
+        .select('_id')
+        .exec();
+
+      if (users.length === 0) {
+        return {
+          items: [],
+          meta: buildPaginationMeta(0, page, limit),
+        };
+      }
+      filter.createdBy = { $in: users.map((u) => u._id) };
+    }
+
     const sortField = query.sortBy || 'createdAt';
+
     const sortOrder = query.sortOrder === 'asc' ? 1 : -1;
 
     const [items, total] = await Promise.all([

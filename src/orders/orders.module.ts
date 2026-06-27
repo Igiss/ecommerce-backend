@@ -11,6 +11,7 @@ import { OrdersService } from './orders.service';
 import { CouponsModule } from '../coupons/coupons.module';
 import { ShippingUnitsModule } from '../shipping-units/shipping-units.module';
 import { InventoryLogsModule } from '../inventory-logs/inventory-logs.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { InventoryLogsModule } from '../inventory-logs/inventory-logs.module';
     CouponsModule,
     ShippingUnitsModule,
     InventoryLogsModule,
+    NotificationsModule,
   ],
   controllers: [OrdersController, OwnerOrdersController, ShipperOrdersController],
   providers: [OrdersService],

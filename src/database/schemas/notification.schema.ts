@@ -8,6 +8,7 @@ export enum NotificationType {
   Payment = 'payment',
   CustomDesign = 'custom_design',
   System = 'system',
+  Promotion = 'promotion',
 }
 
 @Schema({ timestamps: true })

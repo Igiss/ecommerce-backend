@@ -22,12 +22,15 @@ export class NotificationsService {
   }
 
   async broadcast(dto: Omit<CreateNotificationDto, 'userId'>) {
-    const users = await this.userModel.find({ isActive: true }).select('_id').exec();
+    const users = await this.userModel.find({ status: 'active' }).select('_id').exec();
     const notifications = users.map(u => ({
       ...dto,
       userId: u._id,
     }));
-    await this.notificationModel.insertMany(notifications);
+    const chunkSize = 1000;
+    for (let i = 0; i < notifications.length; i += chunkSize) {
+      await this.notificationModel.insertMany(notifications.slice(i, i + chunkSize));
+    }
     return { success: true, count: notifications.length };
   }
 

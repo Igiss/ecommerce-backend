@@ -22,6 +22,8 @@ import { getActivePrice } from '../common/helpers/price.helper';
 import { ShippingUnitsService } from '../shipping-units/shipping-units.service';
 import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
 import { InventoryLogType } from '../database/schemas/inventory-log.schema';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../database/schemas/notification.schema';
 
 @Injectable()
 export class OrdersService {
@@ -33,6 +35,7 @@ export class OrdersService {
     private readonly couponsService: CouponsService,
     private readonly shippingUnitsService: ShippingUnitsService,
     private readonly inventoryLogsService: InventoryLogsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateOrderDto) {
@@ -149,6 +152,18 @@ export class OrdersService {
         await this.updateStatus(orderId.toString(), {} as any);
       } catch (err) {
         console.error('Failed to auto-assign shipping:', err);
+      }
+
+      try {
+        await this.notificationsService.create({
+          userId,
+          title: 'Đặt hàng thành công!',
+          message: `Đơn hàng #${orderId.toString()} của bạn đã được đặt thành công. Chúng tôi đang xử lý và chuẩn bị đơn hàng.`,
+          type: NotificationType.Order,
+          metadata: { orderId: orderId.toString() },
+        });
+      } catch (err) {
+        console.error('Failed to send order creation notification:', err);
       }
 
       return this.orderModel.findById(orderId).exec();
@@ -414,7 +429,21 @@ export class OrdersService {
       order.paidAt = new Date();
     }
 
-    return order.save();
+    const savedOrder = await order.save();
+
+    try {
+      await this.notificationsService.create({
+        userId: savedOrder.userId.toString(),
+        title: 'Giao hàng thành công!',
+        message: `Đơn hàng #${orderId} đã được giao hàng thành công. Cảm ơn bạn đã mua sắm tại cửa hàng!`,
+        type: NotificationType.Order,
+        metadata: { orderId },
+      });
+    } catch (err) {
+      console.error('Failed to send order delivery notification:', err);
+    }
+
+    return savedOrder;
   }
 
   // ─── Owner methods ───────────────────────────────────────────────────────

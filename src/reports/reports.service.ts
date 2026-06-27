@@ -28,6 +28,8 @@ export class ReportsService {
 
   async getOwnerDashboard(ownerId: string) {
     const ownerObjectId = new Types.ObjectId(ownerId);
+    
+    // Tối ưu sẵn vì dùng items.ownerId
     const [orderSummary, productCount, couponCount] = await Promise.all([
       this.orderModel
         .aggregate<{
@@ -81,83 +83,111 @@ export class ReportsService {
   }
 
   async getOverview(ownerId?: string, query: ReportDateQueryDto = {}) {
-    const orderDateFilter = this.buildOrderDateFilter(query);
-
-    if (ownerId) {
-      return this.getOwnerOverview(ownerId, orderDateFilter);
-    }
-
-    const [totalUsers, totalProducts, totalOrders, revenueResult, bestSellingProducts] =
-      await Promise.all([
-        this.userModel.countDocuments().exec(),
-        this.productModel.countDocuments({ status: { $ne: 'deleted' } }).exec(),
-        this.orderModel.countDocuments(orderDateFilter).exec(),
-        this.orderModel
-          .aggregate<{ totalRevenue: number }>([
-            { $match: { orderStatus: OrderStatus.Completed, ...orderDateFilter } },
-            { $group: { _id: null, totalRevenue: { $sum: '$totalAmount' } } },
-          ])
-          .exec(),
-        this.orderModel
-          .aggregate([
-            { $match: { orderStatus: OrderStatus.Completed, ...orderDateFilter } },
-            { $unwind: '$items' },
-            {
-              $group: {
-                _id: '$items.productId',
-                name: { $first: '$items.productName' },
-                quantitySold: { $sum: '$items.quantity' },
-                revenue: { $sum: '$items.total' },
-              },
-            },
-            { $sort: { quantitySold: -1 } },
-            { $limit: 10 },
-          ])
-          .exec(),
-      ]);
-
+    const data = await this.getDashboardStats(ownerId, query);
     return {
-      totalUsers,
-      totalProducts,
-      totalOrders,
-      totalRevenue: revenueResult[0]?.totalRevenue || 0,
-      bestSellingProducts,
+      totalUsers: ownerId ? undefined : data.totalUsers,
+      totalCustomers: ownerId ? data.totalCustomers : undefined,
+      totalProducts: data.totalProducts,
+      totalOrders: data.totalOrders,
+      totalRevenue: data.totalRevenue,
+      bestSellingProducts: data.bestSellingProducts,
     };
   }
 
   async getDashboard(ownerId?: string, query: ReportDateQueryDto = {}) {
+    return this.getDashboardStats(ownerId, query);
+  }
+
+  /**
+   * Tối ưu hóa toàn diện bằng $facet và items.ownerId.
+   * Quét bảng Order đúng 1 lần và rẽ nhánh tính toán.
+   */
+  private async getDashboardStats(ownerId?: string, query: ReportDateQueryDto = {}) {
     const orderDateFilter = this.buildOrderDateFilter(query);
-
+    const orderMatch: any = { ...orderDateFilter };
+    
+    // Sử dụng items.ownerId thay vì $in: productIds
     if (ownerId) {
-      const productIds = await this.getOwnerProductIds(ownerId);
-      const [overview, pendingOrders, completedOrders, lowStockProducts] = await Promise.all([
-        this.getOwnerOverview(ownerId, orderDateFilter, productIds),
-        this.countOwnerOrders(productIds, OrderStatus.Pending, orderDateFilter),
-        this.countOwnerOrders(productIds, OrderStatus.Completed, orderDateFilter),
-        this.productModel
-          .countDocuments({
-            createdBy: new Types.ObjectId(ownerId),
-            stock: { $lt: 5 },
-            status: { $ne: 'deleted' },
-          })
-          .exec(),
-      ]);
-
-      return { ...overview, pendingOrders, completedOrders, lowStockProducts };
+      orderMatch['items.ownerId'] = new Types.ObjectId(ownerId);
     }
 
-    const [overview, pendingOrders, completedOrders, lowStockProducts] = await Promise.all([
-      this.getOverview(undefined, query),
-      this.orderModel
-        .countDocuments({ orderStatus: OrderStatus.Pending, ...orderDateFilter })
-        .exec(),
-      this.orderModel
-        .countDocuments({ orderStatus: OrderStatus.Completed, ...orderDateFilter })
-        .exec(),
-      this.productModel.countDocuments({ stock: { $lt: 5 }, status: { $ne: 'deleted' } }).exec(),
+    const [userCount, productStats, orderFacetResult] = await Promise.all([
+      !ownerId ? this.userModel.countDocuments().exec() : Promise.resolve(0),
+      this.productModel.aggregate([
+        { 
+          $match: { 
+            status: { $ne: 'deleted' }, 
+            ...(ownerId ? { createdBy: new Types.ObjectId(ownerId) } : {}) 
+          } 
+        },
+        { 
+          $facet: {
+            totalProducts: [{ $count: 'count' }],
+            lowStockProducts: [{ $match: { stock: { $lt: 5 } } }, { $count: 'count' }]
+          }
+        }
+      ]).exec(),
+      this.orderModel.aggregate([
+        { $match: orderMatch },
+        {
+          $facet: {
+            pendingOrders: [
+              { $match: { orderStatus: OrderStatus.Pending } },
+              { $count: 'count' }
+            ],
+            completedOrders: [
+              { $match: { orderStatus: OrderStatus.Completed } },
+              { $count: 'count' }
+            ],
+            overview: [
+              { $match: { orderStatus: OrderStatus.Completed } },
+              { $unwind: '$items' },
+              ...(ownerId ? [{ $match: { 'items.ownerId': new Types.ObjectId(ownerId) } }] : []),
+              {
+                $group: {
+                  _id: null,
+                  orderIds: { $addToSet: '$_id' },
+                  customers: { $addToSet: '$userId' },
+                  totalRevenue: { $sum: '$items.total' }
+                }
+              }
+            ],
+            bestSelling: [
+              { $match: { orderStatus: OrderStatus.Completed } },
+              { $unwind: '$items' },
+              ...(ownerId ? [{ $match: { 'items.ownerId': new Types.ObjectId(ownerId) } }] : []),
+              {
+                $group: {
+                  _id: '$items.productId',
+                  name: { $first: '$items.productName' },
+                  image: { $first: '$items.image' },
+                  totalSold: { $sum: '$items.quantity' },
+                  revenue: { $sum: '$items.total' }
+                }
+              },
+              { $sort: { totalSold: -1 } },
+              { $limit: 10 }
+            ]
+          }
+        }
+      ]).exec()
     ]);
 
-    return { ...overview, pendingOrders, completedOrders, lowStockProducts };
+    const pStats = productStats[0] || {};
+    const oStats = orderFacetResult[0] || {};
+    const overviewData = oStats.overview?.[0] || {};
+
+    return {
+      totalUsers: userCount,
+      totalProducts: pStats.totalProducts?.[0]?.count || 0,
+      lowStockProducts: pStats.lowStockProducts?.[0]?.count || 0,
+      totalCustomers: overviewData.customers?.length || 0,
+      totalOrders: overviewData.orderIds?.length || 0,
+      totalRevenue: overviewData.totalRevenue || 0,
+      bestSellingProducts: oStats.bestSelling || [],
+      pendingOrders: oStats.pendingOrders?.[0]?.count || 0,
+      completedOrders: oStats.completedOrders?.[0]?.count || 0,
+    };
   }
 
   async getRevenueChart(period: '7days' | '30days' | '12months', ownerId?: string) {
@@ -180,7 +210,6 @@ export class ReportsService {
           day: { $dayOfMonth: '$createdAt' },
         };
 
-    const ownerProductIds = ownerId ? await this.getOwnerProductIds(ownerId) : undefined;
     const pipeline: PipelineStage[] = [
       {
         $match: {
@@ -190,10 +219,11 @@ export class ReportsService {
       },
     ];
 
-    if (ownerProductIds) {
+    if (ownerId) {
+      (pipeline[0] as any).$match['items.ownerId'] = new Types.ObjectId(ownerId);
       pipeline.push(
         { $unwind: '$items' },
-        { $match: { 'items.productId': { $in: ownerProductIds } } },
+        { $match: { 'items.ownerId': new Types.ObjectId(ownerId) } },
         {
           $group: {
             _id: dateParts,
@@ -225,26 +255,17 @@ export class ReportsService {
   }
 
   async getTopProducts(ownerId?: string, query: ReportDateQueryDto = {}) {
-    const ownerProductIds = ownerId ? await this.getOwnerProductIds(ownerId) : undefined;
-    return this.aggregateTopProducts(ownerProductIds, this.buildOrderDateFilter(query));
-  }
-
-  async getAiTrendReport(ownerId?: string) {
-    const data = await this.getDashboard(ownerId);
-    return this.aiService.generateTrendReport(data);
-  }
-
-  private aggregateTopProducts(
-    ownerProductIds?: Types.ObjectId[],
-    orderDateFilter: OrderDateFilter = {},
-  ) {
+    const orderDateFilter = this.buildOrderDateFilter(query);
     const pipeline: PipelineStage[] = [
       { $match: { orderStatus: OrderStatus.Completed, ...orderDateFilter } },
-      { $unwind: '$items' },
     ];
 
-    if (ownerProductIds) {
-      pipeline.push({ $match: { 'items.productId': { $in: ownerProductIds } } });
+    if (ownerId) {
+      (pipeline[0] as any).$match['items.ownerId'] = new Types.ObjectId(ownerId);
+      pipeline.push({ $unwind: '$items' });
+      pipeline.push({ $match: { 'items.ownerId': new Types.ObjectId(ownerId) } });
+    } else {
+      pipeline.push({ $unwind: '$items' });
     }
 
     pipeline.push(
@@ -264,95 +285,18 @@ export class ReportsService {
     return this.orderModel.aggregate(pipeline).exec();
   }
 
-  private async getOwnerOverview(
-    ownerId: string,
-    orderDateFilter: OrderDateFilter,
-    existingProductIds?: Types.ObjectId[],
-  ) {
-    const ownerObjectId = new Types.ObjectId(ownerId);
-    const productIds = existingProductIds || (await this.getOwnerProductIds(ownerId));
-    const [totalProducts, orderSummary, bestSellingProducts] = await Promise.all([
-      this.productModel
-        .countDocuments({ createdBy: ownerObjectId, status: { $ne: 'deleted' } })
-        .exec(),
-      this.orderModel
-        .aggregate<{
-          totalOrders: number;
-          totalRevenue: number;
-          customers: Types.ObjectId[];
-        }>([
-          { $match: orderDateFilter },
-          { $unwind: '$items' },
-          { $match: { 'items.productId': { $in: productIds } } },
-          {
-            $group: {
-              _id: null,
-              orderIds: { $addToSet: '$_id' },
-              customers: { $addToSet: '$userId' },
-              totalRevenue: {
-                $sum: {
-                  $cond: [
-                    { $eq: ['$orderStatus', OrderStatus.Completed] },
-                    '$items.total',
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-          {
-            $project: {
-              _id: 0,
-              totalOrders: { $size: '$orderIds' },
-              totalRevenue: 1,
-              customers: 1,
-            },
-          },
-        ])
-        .exec(),
-      this.aggregateTopProducts(productIds, orderDateFilter),
-    ]);
-
-    return {
-      totalCustomers: orderSummary[0]?.customers.length || 0,
-      totalProducts,
-      totalOrders: orderSummary[0]?.totalOrders || 0,
-      totalRevenue: orderSummary[0]?.totalRevenue || 0,
-      bestSellingProducts,
-    };
-  }
-
-  private async getOwnerProductIds(ownerId: string) {
-    const products = await this.productModel
-      .find({
-        createdBy: new Types.ObjectId(ownerId),
-      })
-      .select('_id')
-      .lean()
-      .exec();
-
-    return products.map((product) => product._id);
-  }
-
-  private async countOwnerOrders(
-    productIds: Types.ObjectId[],
-    orderStatus: OrderStatus,
-    orderDateFilter: OrderDateFilter,
-  ) {
-    const [result] = await this.orderModel
-      .aggregate<{ count: number }>([
-        {
-          $match: {
-            orderStatus,
-            'items.productId': { $in: productIds },
-            ...orderDateFilter,
-          },
-        },
-        { $count: 'count' },
-      ])
-      .exec();
-
-    return result?.count || 0;
+  async getAiTrendReport(ownerId?: string) {
+    // 1. Cung cấp dữ liệu Time-series cho AI
+    const revenueChart = await this.getRevenueChart('30days', ownerId);
+    
+    // 2. Cung cấp tổng quan
+    const dashboard = await this.getDashboard(ownerId);
+    
+    // 3. Truyền ownerId để fix lỗi data leakage trong cache
+    return this.aiService.generateTrendReport({
+      overview: dashboard,
+      revenueTrends: revenueChart
+    }, ownerId);
   }
 
   private buildOrderDateFilter(query: ReportDateQueryDto): OrderDateFilter {

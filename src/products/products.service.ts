@@ -405,6 +405,11 @@ export class ProductsService implements OnModuleInit {
       filter.categoryId = new Types.ObjectId(query.categoryId);
     }
 
+    if (query.ownerId) {
+      filter.createdBy = new Types.ObjectId(query.ownerId);
+    }
+
+
     if (query.brand) {
       filter.brand = new RegExp(query.brand, 'i');
     }

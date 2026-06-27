@@ -25,24 +25,25 @@ export class AiService {
     }
   }
 
-  async generateTrendReport(salesData: any): Promise<string> {
+  async generateTrendReport(salesData: any, ownerId?: string): Promise<string> {
     if (!this.isAiEnabled) {
       return 'Chức năng AI hiện chưa được cấu hình (thiếu API Key). Vui lòng cấu hình `GEMINI_API_KEY` trong môi trường.';
     }
 
-    const cacheKey = 'ai_trend_report';
+    // FIX DATA LEAK: Khóa cache phải phụ thuộc vào ownerId
+    const cacheKey = ownerId ? `ai_trend_report_${ownerId}` : 'ai_trend_report_admin';
     const cachedReport = await this.cacheManager.get<string>(cacheKey);
     if (cachedReport) {
-      this.logger.log('Returning cached AI trend report');
+      this.logger.log(`Returning cached AI trend report for ${ownerId || 'admin'}`);
       return cachedReport;
     }
 
     try {
       const prompt = `
-Bạn là một chuyên gia phân tích dữ liệu bán hàng xuất sắc. Dưới đây là dữ liệu tổng hợp về doanh thu và số lượng sản phẩm bán ra trong 30 ngày qua của cửa hàng.
-Vui lòng đọc dữ liệu và viết một báo cáo phân tích xu hướng mua hàng:
-1. Nhận xét tổng quan về tình hình bán hàng.
-2. Sản phẩm / Danh mục nào đang bán chạy nhất và có xu hướng tăng trưởng.
+Bạn là một chuyên gia phân tích dữ liệu bán hàng. Dưới đây là dữ liệu tổng quan và chi tiết doanh thu theo từng ngày của cửa hàng (30 ngày qua).
+Vui lòng phân tích và viết một báo cáo ngắn gọn:
+1. Phân tích xu hướng dựa trên biểu đồ doanh thu từng ngày (ngày nào cao/thấp, tăng hay giảm).
+2. Nhận xét về các sản phẩm đang bán chạy nhất.
 3. Dự đoán xu hướng mua hàng trong tháng tới dựa trên dữ liệu này.
 4. Đề xuất một vài hành động (ví dụ: nhập thêm hàng, chạy khuyến mãi) cho chủ shop.
 
@@ -72,7 +73,7 @@ Trả về báo cáo bằng ngôn ngữ Tiếng Việt, sử dụng định dạ
 
     try {
       const response = await this.ai.models.embedContent({
-        model: 'text-embedding-004',
+        model: 'gemini-embedding-exp-03-07',
         contents: text,
       });
       return response.embeddings?.[0]?.values || [];

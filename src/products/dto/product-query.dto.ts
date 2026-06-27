@@ -33,6 +33,12 @@ export class ProductQueryDto {
   @IsMongoId()
   categoryId?: string;
 
+  @ApiPropertyOptional({ description: 'MongoDB ObjectId của chủ shop / người tạo' })
+  @IsOptional()
+  @IsMongoId()
+  ownerId?: string;
+
+
   @ApiPropertyOptional({ minimum: 0, description: 'Giá thấp nhất' })
   @IsOptional()
   @Type(() => Number)

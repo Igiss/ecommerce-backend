@@ -424,7 +424,7 @@ export class OrdersService {
     });
 
     // Đơn COD: shipper đã nhận tiền khi giao → tự động đánh dấu đã thanh toán
-    if (order.paymentMethod === 'COD' && order.paymentStatus !== PaymentStatus.Paid) {
+    if (order.paymentMethod?.toUpperCase() === 'COD' && order.paymentStatus !== PaymentStatus.Paid) {
       order.paymentStatus = PaymentStatus.Paid;
       order.paidAt = new Date();
     }

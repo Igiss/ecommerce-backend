@@ -1,8 +1,9 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { ReturnQueryFromVNPay, VNPay, VnpLocale } from 'vnpay';
+import { OrderStatus } from '../common/enums/order-status.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Order, OrderDocument, PaymentMethod } from '../database/schemas/order.schema';
 import { Payment, PaymentDocument } from '../database/schemas/payment.schema';
@@ -79,6 +80,12 @@ export class PaymentsService {
     if (order.userId.toString() !== userId) {
       throw new ForbiddenException('You can only pay for your own order');
     }
+    if (order.paymentStatus === PaymentStatus.Paid) {
+      throw new BadRequestException('Order has already been paid');
+    }
+    if (order.orderStatus === OrderStatus.Cancelled) {
+      throw new BadRequestException('Order has been cancelled');
+    }
 
     const transactionCode = `${order.id}_${Date.now()}`;
     await this.paymentModel.create({
@@ -111,9 +118,17 @@ export class PaymentsService {
 
   async handleVnpayCallback(query: Record<string, string>) {
     const verification = this.getVnpay().verifyReturnUrl(query as ReturnQueryFromVNPay);
+    if (!verification.isVerified) {
+      return {
+        status: 'failed',
+        orderId: (query.vnp_TxnRef || '').split('_')[0],
+        responseCode: '97',
+      };
+    }
+
     const transactionCode = query.vnp_TxnRef || '';
     const orderId = transactionCode.split('_')[0];
-    const success = verification.isVerified && query.vnp_ResponseCode === '00';
+    const success = query.vnp_ResponseCode === '00';
 
     if (success) {
       await this.confirmVnpayPayment(orderId, transactionCode, query);
@@ -151,6 +166,8 @@ export class PaymentsService {
 
     if (query.vnp_ResponseCode === '00') {
       await this.confirmVnpayPayment(orderId, transactionCode, query);
+    } else {
+      await this.markVnpayFailed(transactionCode, query);
     }
     return { RspCode: '00', Message: 'Confirm Success' };
   }
@@ -228,6 +245,11 @@ export class PaymentsService {
   }
 
   private normalizeIp(ipAddress?: string) {
-    return (ipAddress || '127.0.0.1').replace('::ffff:', '').split(',')[0].trim();
+    let ip = ipAddress || '127.0.0.1';
+    ip = ip.replace('::ffff:', '').split(',')[0].trim();
+    if (ip === '::1') {
+      return '127.0.0.1';
+    }
+    return ip;
   }
 }

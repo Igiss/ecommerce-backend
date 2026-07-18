@@ -9,7 +9,7 @@ import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Role } from '../common/enums/role.enum';
-import { Order, OrderDocument, ReturnStatus } from '../database/schemas/order.schema';
+import { Order, OrderDocument, PaymentMethod, ReturnStatus } from '../database/schemas/order.schema';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { CustomDesign, CustomDesignDocument } from '../database/schemas/custom-design.schema';
 import { ShippingUnit, ShippingUnitDocument } from '../database/schemas/shipping-unit.schema';
@@ -149,19 +149,30 @@ export class OrdersService {
 
       // Tự động phân bổ vận chuyển thay vì chờ Admin duyệt
       try {
-        await this.updateStatus(orderId.toString(), {} as any);
+        await this.updateStatus(orderId.toString(), {} as UpdateAdminOrderStatusDto);
       } catch (err) {
         console.error('Failed to auto-assign shipping:', err);
       }
 
       try {
-        await this.notificationsService.create({
-          userId,
-          title: 'Đặt hàng thành công!',
-          message: `Đơn hàng #${orderId.toString()} của bạn đã được đặt thành công. Chúng tôi đang xử lý và chuẩn bị đơn hàng.`,
-          type: NotificationType.Order,
-          metadata: { orderId: orderId.toString() },
-        });
+        const isOnlinePayment = [PaymentMethod.VNPay, PaymentMethod.Momo, PaymentMethod.Banking].includes(order.paymentMethod);
+        if (isOnlinePayment) {
+          await this.notificationsService.create({
+            userId,
+            title: 'Chờ thanh toán',
+            message: `Đơn hàng #${orderId.toString()} đã được tạo. Vui lòng thanh toán qua ${order.paymentMethod} để hoàn tất đơn hàng.`,
+            type: NotificationType.Order,
+            metadata: { orderId: orderId.toString() },
+          });
+        } else {
+          await this.notificationsService.create({
+            userId,
+            title: 'Đặt hàng thành công!',
+            message: `Đơn hàng #${orderId.toString()} của bạn đã được đặt thành công. Chúng tôi đang xử lý và chuẩn bị đơn hàng.`,
+            type: NotificationType.Order,
+            metadata: { orderId: orderId.toString() },
+          });
+        }
       } catch (err) {
         console.error('Failed to send order creation notification:', err);
       }
@@ -217,7 +228,7 @@ export class OrdersService {
    * Nếu không tìm được ShippingUnit → set confirmed, admin override sau.
    * Nếu tìm được Unit nhưng không có Shipper → assign cho Unit, Unit tự phân tay.
    */
-  async updateStatus(id: string, dto: UpdateAdminOrderStatusDto) {
+  async updateStatus(id: string, _dto: UpdateAdminOrderStatusDto) {
     const order = await this.orderModel.findById(id).exec();
     if (!order) {
       throw new NotFoundException('Order not found');

@@ -8,6 +8,8 @@ import { PaymentStatus } from '../common/enums/payment-status.enum';
 import { Order, OrderDocument, PaymentMethod } from '../database/schemas/order.schema';
 import { Payment, PaymentDocument } from '../database/schemas/payment.schema';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../database/schemas/notification.schema';
 
 @Injectable()
 export class PaymentsService {
@@ -15,6 +17,7 @@ export class PaymentsService {
     @InjectModel(Payment.name) private readonly paymentModel: Model<PaymentDocument>,
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     private readonly configService: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findAll() {
@@ -193,13 +196,17 @@ export class PaymentsService {
   ) {
     const paidAt = new Date();
     const providerTransactionId = metadata.vnp_TransactionNo;
-    await Promise.all([
-      this.orderModel.findByIdAndUpdate(orderId, {
-        paymentMethod: PaymentMethod.VNPay,
-        paymentStatus: PaymentStatus.Paid,
-        paidAt,
-        transactionCode,
-      }),
+    const [updatedOrder] = await Promise.all([
+      this.orderModel.findByIdAndUpdate(
+        orderId,
+        {
+          paymentMethod: PaymentMethod.VNPay,
+          paymentStatus: PaymentStatus.Paid,
+          paidAt,
+          transactionCode,
+        },
+        { new: true },
+      ),
       this.paymentModel.findOneAndUpdate(
         { transactionCode },
         {
@@ -211,6 +218,20 @@ export class PaymentsService {
         },
       ),
     ]);
+
+    if (updatedOrder) {
+      try {
+        await this.notificationsService.create({
+          userId: updatedOrder.userId.toString(),
+          title: 'Thanh toán thành công!',
+          message: `Đơn hàng #${orderId} của bạn đã được thanh toán thành công qua VNPay. Chúng tôi đang xử lý và chuẩn bị đơn hàng.`,
+          type: NotificationType.Order,
+          metadata: { orderId },
+        });
+      } catch (err) {
+        console.error('Failed to send payment success notification:', err);
+      }
+    }
   }
 
   private async markVnpayFailed(
@@ -228,10 +249,28 @@ export class PaymentsService {
       { new: true },
     );
     if (payment) {
-      await this.orderModel.findByIdAndUpdate(payment.orderId, {
-        paymentStatus: PaymentStatus.Failed,
-        transactionCode,
-      });
+      const order = await this.orderModel.findByIdAndUpdate(
+        payment.orderId,
+        {
+          paymentStatus: PaymentStatus.Failed,
+          transactionCode,
+        },
+        { new: true },
+      );
+
+      if (order) {
+        try {
+          await this.notificationsService.create({
+            userId: order.userId.toString(),
+            title: 'Thanh toán thất bại',
+            message: `Thanh toán cho đơn hàng #${order._id.toString()} không thành công. Bạn có thể thử thanh toán lại trong mục chi tiết đơn hàng.`,
+            type: NotificationType.Order,
+            metadata: { orderId: order._id.toString() },
+          });
+        } catch (err) {
+          console.error('Failed to send payment failure notification:', err);
+        }
+      }
     }
   }
 

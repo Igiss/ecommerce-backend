@@ -4,6 +4,7 @@ import { Order, OrderSchema } from '../database/schemas/order.schema';
 import { Payment, PaymentSchema } from '../database/schemas/payment.schema';
 import { PaymentsController, VnpayController } from './payments.controller';
 import { PaymentsService } from './payments.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { PaymentsService } from './payments.service';
       { name: Payment.name, schema: PaymentSchema },
       { name: Order.name, schema: OrderSchema },
     ]),
+    NotificationsModule,
   ],
   controllers: [PaymentsController, VnpayController],
   providers: [PaymentsService],

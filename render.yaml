@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: ecommerce-backend
+    env: node
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Thêm các biến môi trường khác của bạn ở đây, Render sẽ đọc chúng.
+      # Lưu ý: Đừng viết mật khẩu thật vào file này nếu bạn public code lên GitHub.
+      # Tốt nhất là khai báo tên biến, còn giá trị thực thì bạn nhập trên giao diện Render.
+      - key: PORT
+        value: 10000 # Render thường cấp port 10000 cho web services
+      - key: FRONTEND_URL
+        sync: false # Render sẽ yêu cầu bạn nhập giá trị này trên Dashboard
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false

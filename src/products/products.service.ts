@@ -167,7 +167,7 @@ export class ProductsService implements OnModuleInit {
   }
 
   async findOne(idOrSlug: number | string) {
-    let query: any = { status: { $ne: ProductStatus.Deleted } };
+    const query: FilterQuery<ProductDocument> = { status: { $ne: ProductStatus.Deleted } };
     
     // Check if idOrSlug is a number (productId) or a string (slug)
     const isNumeric = !isNaN(Number(idOrSlug));
@@ -352,16 +352,52 @@ export class ProductsService implements OnModuleInit {
     return product;
   }
 
-  searchForAssistant(search: string) {
+  async searchForAssistant(search: string) {
     const terms = search.trim();
-    const filter: FilterQuery<ProductDocument> = {
-      status: ProductStatus.Active,
-    };
-    if (terms) {
-      filter.$text = { $search: terms };
+    if (!terms) {
+      return this.productModel.find({ status: ProductStatus.Active }).populate('categoryId', 'name').limit(10).exec();
     }
 
-    return this.productModel.find(filter).limit(10).exec();
+    // Clean stop words from query text
+    const cleanQuery = terms
+      .replace(/loại nào tốt|giá bao nhiêu|là gì|tư vấn|báo giá|so sánh|cho tôi|có những|nào|loại/gi, '')
+      .trim();
+
+    const searchKeyword = cleanQuery || terms;
+    const searchRegex = new RegExp(searchKeyword, 'i');
+
+    const filter: FilterQuery<ProductDocument> = {
+      status: ProductStatus.Active,
+      $or: [
+        { name: searchRegex },
+        { description: searchRegex },
+        { brand: searchRegex }
+      ]
+    };
+
+    let results = await this.productModel.find(filter).populate('categoryId', 'name').limit(10).exec();
+
+    // Fallback: If regex exact phrase returns empty, try searching key tokens (e.g. "nồi", "chiên")
+    if (!results || results.length === 0) {
+      const tokens = searchKeyword.split(/\s+/).filter(t => t.length >= 3);
+      if (tokens.length > 0) {
+        const tokenRegexes = tokens.map(t => new RegExp(t, 'i'));
+        results = await this.productModel.find({
+          status: ProductStatus.Active,
+          $or: [
+            { name: { $in: tokenRegexes } },
+            { description: { $in: tokenRegexes } }
+          ]
+        }).populate('categoryId', 'name').limit(10).exec();
+      }
+    }
+
+    // Fallback if still empty: Return top active products
+    if (!results || results.length === 0) {
+      results = await this.productModel.find({ status: ProductStatus.Active }).populate('categoryId', 'name').limit(10).exec();
+    }
+
+    return results;
   }
 
   async suggestProducts(queryText: string) {

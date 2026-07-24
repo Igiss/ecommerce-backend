@@ -79,7 +79,7 @@ export class OrdersController {
     description:
       "Admin cannot set cancelled; only the user can cancel a pending order.",
   })
-  @Roles(Role.Admin)
+  @Roles(Role.Admin, Role.Owner)
   updateStatus(
     @Param("id", ParseMongoIdPipe) id: string,
     @Body() dto: UpdateAdminOrderStatusDto,

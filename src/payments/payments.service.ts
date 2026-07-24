@@ -10,6 +10,8 @@ import { Payment, PaymentDocument } from '../database/schemas/payment.schema';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../database/schemas/notification.schema';
+import { SettingsService } from '../settings/settings.service';
+import { SePayPgClient } from './sepay-pg.client';
 
 @Injectable()
 export class PaymentsService {
@@ -18,6 +20,7 @@ export class PaymentsService {
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     private readonly configService: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   async findAll() {
@@ -291,4 +294,243 @@ export class PaymentsService {
     }
     return ip;
   }
+
+  // --- SEPAY INTEGRATION METHODS ---
+
+  async createSepayQr(userId: string, orderId: string) {
+    const order = await this.orderModel.findById(orderId).exec();
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.userId.toString() !== userId) {
+      throw new ForbiddenException('You can only pay for your own order');
+    }
+    if (order.paymentStatus === PaymentStatus.Paid) {
+      throw new BadRequestException('Order has already been paid');
+    }
+    if (order.orderStatus === OrderStatus.Cancelled) {
+      throw new BadRequestException('Order has been cancelled');
+    }
+
+    // Payment syntax code: DH + last 6 characters of Order ID or full Order ID
+    const shortCode = order._id.toString().slice(-6).toUpperCase();
+    const paymentCode = `DH${shortCode}`;
+
+    // Read SePay config from env or database
+    let dbSettings: any = null;
+    try {
+      dbSettings = await this.settingsService.getSepaySettings();
+    } catch {
+      // Fallback
+    }
+
+    const bankName = dbSettings?.bankName || this.configService.get<string>('SEPAY_BANK_NAME') || '';
+    const accountNumber = dbSettings?.accountNumber || this.configService.get<string>('SEPAY_ACC_NUMBER') || '';
+    const accountHolder = dbSettings?.accountHolder || this.configService.get<string>('SEPAY_ACC_HOLDER') || '';
+
+    // SePay official VietQR URL endpoint format
+    const qrUrl = `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankName}&amount=${order.totalAmount}&des=${paymentCode}`;
+
+    // Upsert payment document
+    await this.paymentModel.findOneAndUpdate(
+      { orderId: order._id, method: PaymentMethod.SePay },
+      {
+        orderId: order._id,
+        userId: order.userId,
+        method: PaymentMethod.SePay,
+        amount: order.totalAmount,
+        status: PaymentStatus.Unpaid,
+        transactionCode: paymentCode,
+        metadata: {
+          qrUrl,
+          bankName,
+          accountNumber,
+          accountHolder,
+          paymentCode,
+        },
+      },
+      { upsert: true, new: true },
+    );
+
+    order.paymentMethod = PaymentMethod.SePay;
+    order.transactionCode = paymentCode;
+    await order.save();
+
+    return {
+      orderId: order._id.toString(),
+      totalAmount: order.totalAmount,
+      paymentCode,
+      qrUrl,
+      bankName,
+      accountNumber,
+      accountHolder,
+    };
+  }
+
+  async createSepayCheckout(userId: string, orderId: string) {
+    const order = await this.orderModel.findById(orderId).exec();
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    if (order.userId.toString() !== userId) {
+      throw new ForbiddenException('You can only pay for your own order');
+    }
+    if (order.paymentStatus === PaymentStatus.Paid) {
+      throw new BadRequestException('Order has already been paid');
+    }
+    if (order.orderStatus === OrderStatus.Cancelled) {
+      throw new BadRequestException('Order has been cancelled');
+    }
+
+    const shortCode = order._id.toString().slice(-6).toUpperCase();
+    const invoiceNumber = `DH${shortCode}`;
+
+    const env = (this.configService.get<string>('SEPAY_ENV') as 'sandbox' | 'production') || 'sandbox';
+    const merchant_id = this.configService.get<string>('SEPAY_MERCHANT_ID') || '';
+    const secret_key = this.configService.get<string>('SEPAY_SECRET_KEY') || '';
+
+    const client = new SePayPgClient({
+      env,
+      merchant_id,
+      secret_key,
+    });
+
+    const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
+
+    const checkoutURL = client.checkout.initCheckoutUrl();
+    const checkoutFormfields = client.checkout.initOneTimePaymentFields({
+      payment_method: 'BANK_TRANSFER',
+      order_invoice_number: invoiceNumber,
+      order_amount: order.totalAmount,
+      currency: 'VND',
+      order_description: `Thanh toan don hang ${invoiceNumber}`,
+      success_url: `${frontendUrl}/orders/${order.id}?payment=success`,
+      error_url: `${frontendUrl}/orders/${order.id}?payment=error`,
+      cancel_url: `${frontendUrl}/orders/${order.id}?payment=cancel`,
+    });
+
+    order.paymentMethod = PaymentMethod.SePay;
+    order.transactionCode = invoiceNumber;
+    await order.save();
+
+    return {
+      orderId: order._id.toString(),
+      checkoutURL,
+      checkoutFormfields,
+    };
+  }
+
+  async handleSepayWebhook(payload: Record<string, any>, authHeader?: string) {
+    let dbSettings: any = null;
+    try {
+      dbSettings = await this.settingsService.getSepaySettings();
+    } catch {
+      // Fallback
+    }
+    const sepayApiKey = dbSettings?.apiKey || this.configService.get<string>('SEPAY_API_KEY');
+    
+    // Validate Authorization header if SEPAY_API_KEY is configured
+    if (sepayApiKey) {
+      const token = (authHeader || '').replace('Bearer ', '').trim();
+      if (token !== sepayApiKey) {
+        throw new ForbiddenException('Invalid SePay Webhook Token');
+      }
+    }
+
+    const { code, content, transferAmount, referenceCode, gateway, accountNumber } = payload;
+    
+    // Extract payment code from code field or content string (regex DH[A-Z0-9]+)
+    let paymentCode = code || '';
+    if (!paymentCode && content) {
+      const match = (content as string).match(/DH[A-Z0-9]+/i);
+      if (match) {
+        paymentCode = match[0].toUpperCase();
+      }
+    }
+
+    if (!paymentCode) {
+      return { success: false, message: 'No payment code found in transaction content' };
+    }
+
+    // Find order by transactionCode or short ID
+    let order = await this.orderModel.findOne({ transactionCode: paymentCode }).exec();
+    if (!order) {
+      // Fallback search by short Mongo ID
+      const cleanCode = paymentCode.replace(/^DH/i, '').toLowerCase();
+      const allOrders = await this.orderModel.find({ paymentStatus: { $ne: PaymentStatus.Paid } }).exec();
+      order = allOrders.find((o) => o._id.toString().toLowerCase().endsWith(cleanCode)) || null;
+    }
+
+    if (!order) {
+      return { success: false, message: `Order not found for code: ${paymentCode}` };
+    }
+
+    if (order.paymentStatus === PaymentStatus.Paid) {
+      return { success: true, message: 'Order already paid' };
+    }
+
+    const amountPaid = Number(transferAmount || 0);
+    if (amountPaid < order.totalAmount) {
+      return { success: false, message: `Amount paid (${amountPaid}) is less than total order amount (${order.totalAmount})` };
+    }
+
+    // Mark order & payment as Paid
+    const paidAt = new Date();
+    order.paymentStatus = PaymentStatus.Paid;
+    order.orderStatus = OrderStatus.Confirmed;
+    order.paidAt = paidAt;
+    order.transactionCode = paymentCode;
+    await order.save();
+
+    await this.paymentModel.findOneAndUpdate(
+      { orderId: order._id },
+      {
+        status: PaymentStatus.Paid,
+        paidAt,
+        providerTransactionId: referenceCode || `SEPAY_${Date.now()}`,
+        metadata: {
+          gateway,
+          accountNumber,
+          referenceCode,
+          content,
+          transferAmount: amountPaid,
+          payload,
+        },
+      },
+    );
+
+    // Send Real-time Notification to User
+    try {
+      await this.notificationsService.create({
+        userId: order.userId.toString(),
+        title: 'Thanh toán SePay thành công! 🎉',
+        message: `Hệ thống đã nhận được ${amountPaid.toLocaleString('vi-VN')}đ cho đơn hàng #${order._id.toString()}. Cửa hàng đang chuẩn bị giao cho bạn!`,
+        type: NotificationType.Order,
+        metadata: { orderId: order._id.toString() },
+      });
+    } catch (err) {
+      console.error('Failed to send SePay notification:', err);
+    }
+
+    return {
+      success: true,
+      orderId: order._id.toString(),
+      message: 'SePay payment confirmed successfully',
+    };
+  }
+
+  async getSepayStatus(orderId: string) {
+    const order = await this.orderModel.findById(orderId).exec();
+    if (!order) {
+      throw new NotFoundException('Order not found');
+    }
+    return {
+      orderId: order._id.toString(),
+      paymentStatus: order.paymentStatus,
+      orderStatus: order.orderStatus,
+      paidAt: order.paidAt,
+      isPaid: order.paymentStatus === PaymentStatus.Paid,
+    };
+  }
 }
+

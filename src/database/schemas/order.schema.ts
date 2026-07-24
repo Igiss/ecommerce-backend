@@ -11,6 +11,7 @@ export enum PaymentMethod {
   Banking = 'BANKING',
   Momo    = 'MOMO',
   VNPay   = 'VNPAY',
+  SePay   = 'SEPAY',
 }
 
 export enum ReturnStatus {

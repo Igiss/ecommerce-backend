@@ -17,4 +17,15 @@ export class GoogleAuthGuard extends AuthGuard('google') {
     }
     return super.canActivate(context);
   }
+
+  handleRequest(err: unknown, user: unknown, _info: unknown, context: ExecutionContext) {
+    if (err || !user) {
+      const response = context.switchToHttp().getResponse();
+      const frontendUrl = (
+        this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3005'
+      ).replace(/\/$/, '');
+      return response.redirect(`${frontendUrl}/login?error=google_cancelled`);
+    }
+    return user;
+  }
 }

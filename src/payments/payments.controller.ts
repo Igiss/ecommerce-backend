@@ -70,6 +70,33 @@ export class PaymentsController {
   ) {
     return this.paymentsService.createVnpayUrl(user.sub, orderId, request.ip);
   }
+
+  @Post('sepay/:orderId/qr')
+  @ApiOperation({ summary: '[User] Create SePay VietQR payment info' })
+  @ApiParam({ name: 'orderId', description: 'Order MongoDB ObjectId' })
+  createSepayQr(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId', ParseMongoIdPipe) orderId: string,
+  ) {
+    return this.paymentsService.createSepayQr(user.sub, orderId);
+  }
+
+  @Post('sepay/:orderId/checkout')
+  @ApiOperation({ summary: '[User] Create SePay Payment Gateway Checkout URL & Form Fields' })
+  @ApiParam({ name: 'orderId', description: 'Order MongoDB ObjectId' })
+  createSepayCheckout(
+    @CurrentUser() user: JwtPayload,
+    @Param('orderId', ParseMongoIdPipe) orderId: string,
+  ) {
+    return this.paymentsService.createSepayCheckout(user.sub, orderId);
+  }
+
+  @Get('sepay/status/:orderId')
+  @ApiOperation({ summary: '[User] Check SePay payment status for an order' })
+  @ApiParam({ name: 'orderId', description: 'Order MongoDB ObjectId' })
+  getSepayStatus(@Param('orderId', ParseMongoIdPipe) orderId: string) {
+    return this.paymentsService.getSepayStatus(orderId);
+  }
 }
 
 @ApiTags('Payments')
@@ -93,3 +120,30 @@ export class VnpayController {
     return this.paymentsService.handleVnpayIpn(query);
   }
 }
+
+@ApiTags('Payments')
+@Controller('payments/sepay')
+export class SepayWebhookController {
+  constructor(private readonly paymentsService: PaymentsService) {}
+
+  @Post('webhook')
+  @ApiOperation({ summary: '[Public/SePay] Handle automated bank Webhook' })
+  handleWebhook(
+    @Body() payload: Record<string, unknown>,
+    @Req() request: Request,
+  ) {
+    const authHeader = request.headers['authorization'] as string | undefined;
+    return this.paymentsService.handleSepayWebhook(payload, authHeader);
+  }
+
+  @Post('ipn')
+  @ApiOperation({ summary: '[Public/SePay] Handle IPN notification callback' })
+  handleIpn(
+    @Body() payload: Record<string, unknown>,
+    @Req() request: Request,
+  ) {
+    const authHeader = request.headers['authorization'] as string | undefined;
+    return this.paymentsService.handleSepayWebhook(payload, authHeader);
+  }
+}
+

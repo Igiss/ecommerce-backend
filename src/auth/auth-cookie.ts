@@ -5,7 +5,7 @@ export const AUTH_COOKIE_NAME = 'access_token';
 export function getAuthCookieOptions(isProduction: boolean): CookieOptions {
   return {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: isProduction ? 'none' : 'lax',
     secure: isProduction,
     path: '/',
   };

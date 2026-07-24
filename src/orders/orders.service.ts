@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
@@ -26,7 +27,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../database/schemas/notification.schema';
 
 @Injectable()
-export class OrdersService {
+export class OrdersService implements OnModuleInit {
   constructor(
     @InjectModel(Order.name) private readonly orderModel: Model<OrderDocument>,
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
@@ -37,6 +38,60 @@ export class OrdersService {
     private readonly inventoryLogsService: InventoryLogsService,
     private readonly notificationsService: NotificationsService,
   ) {}
+
+  async onModuleInit() {
+    this.autoCancelExpiredUnpaidOrders();
+    setInterval(() => {
+      this.autoCancelExpiredUnpaidOrders().catch((err) =>
+        console.error('Error in autoCancelExpiredUnpaidOrders:', err),
+      );
+    }, 60 * 1000);
+  }
+
+  async autoCancelExpiredUnpaidOrders() {
+    try {
+      const thirtyMinsAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const expiredOrders = await this.orderModel
+        .find({
+          paymentMethod: { $in: [PaymentMethod.SePay, PaymentMethod.VNPay] },
+          paymentStatus: PaymentStatus.Unpaid,
+          orderStatus: { $nin: [OrderStatus.Cancelled, OrderStatus.Completed] },
+          createdAt: { $lte: thirtyMinsAgo },
+        })
+        .exec();
+
+      for (const order of expiredOrders) {
+        order.orderStatus = OrderStatus.Cancelled;
+        order.cancelReason = 'Tự động hủy hệ thống do quá thời hạn thanh toán 30 phút';
+        await order.save();
+
+        for (const item of order.items) {
+          await this.productModel
+            .findByIdAndUpdate(item.productId, {
+              $inc: { stock: item.quantity, soldCount: -item.quantity },
+            })
+            .exec();
+
+          await this.inventoryLogsService.createLog({
+            productId: item.productId.toString(),
+            type: InventoryLogType.Import,
+            quantity: item.quantity,
+            note: `Auto-restock for cancelled unpaid order ${order._id}`,
+          });
+        }
+
+        await this.notificationsService.createNotification({
+          userId: order.userId.toString(),
+          type: NotificationType.OrderStatusUpdate,
+          title: 'Đơn hàng đã tự động hủy',
+          message: `Đơn hàng ${(order._id as any).toString().slice(-6).toUpperCase()} đã tự động bị hủy do quá hạn thanh toán 30 phút.`,
+          data: { orderId: order._id.toString() },
+        });
+      }
+    } catch (err) {
+      console.error('Error auto-cancelling unpaid orders:', err);
+    }
+  }
 
   async create(userId: string, dto: CreateOrderDto) {
     if (!dto.items.length) {

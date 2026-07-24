@@ -70,9 +70,12 @@ export class AuthController {
   async googleCallback(@Req() request: Request, @Res() response: Response) {
     const result = await this.authService.googleLogin(request.user as UserDocument);
     setAuthCookie(response, result.accessToken, this.isProduction());
-    const frontendUrl =
-      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3001';
-    return response.redirect(`${frontendUrl}/auth/google/callback?success=true`);
+    const frontendUrl = (
+      this.configService.get<string>('FRONTEND_URL') || 'http://localhost:3005'
+    ).replace(/\/$/, '');
+    return response.redirect(
+      `${frontendUrl}/auth/google/callback?success=true&token=${result.accessToken}`,
+    );
   }
 
   @Get('profile')

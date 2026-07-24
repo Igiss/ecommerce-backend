@@ -21,6 +21,7 @@ import { WishlistsModule } from './wishlists/wishlists.module';
 import { InventoryLogsModule } from './inventory-logs/inventory-logs.module';
 import { AiModule } from './ai/ai.module';
 import { BannersModule } from './banners/banners.module';
+import { SettingsModule } from './settings/settings.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { BannersModule } from './banners/banners.module';
     InventoryLogsModule,
     AiModule,
     BannersModule,
+    SettingsModule,
   ],
 })
 export class AppModule {}

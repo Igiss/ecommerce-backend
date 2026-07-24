@@ -23,7 +23,9 @@ export class ChatService {
   async chat(dto: ChatDto) {
     const apiKey = this.configService.get<string>('GEMINI_API_KEY');
     if (!apiKey) {
-      throw new ServiceUnavailableException('GEMINI_API_KEY is not configured');
+      throw new ServiceUnavailableException(
+        'Trợ lý AI hiện chưa sẵn sàng. Bạn vui lòng thử lại sau.',
+      );
     }
 
     const messages = dto.messages?.length
@@ -166,15 +168,26 @@ Quy tắc trình bày:
       return { reply: replyText, products: finalProducts };
     } catch (error) {
       const geminiError = error as { status?: number; message?: string };
+      const providerMessage = geminiError.message || '';
+      const isOverloaded =
+        geminiError.status === HttpStatus.SERVICE_UNAVAILABLE ||
+        /503|service unavailable|high demand|overload/i.test(providerMessage);
+
       if (geminiError.status === HttpStatus.TOO_MANY_REQUESTS) {
         throw new HttpException(
-          'Gemini quota exceeded. Please retry later or check the API quota.',
+          'Trợ lý AI đang nhận quá nhiều yêu cầu. Bạn vui lòng thử lại sau ít phút.',
           HttpStatus.TOO_MANY_REQUESTS,
         );
       }
 
+      if (isOverloaded) {
+        throw new ServiceUnavailableException(
+          'Trợ lý AI đang quá tải. Bạn vui lòng thử lại sau ít phút.',
+        );
+      }
+
       throw new ServiceUnavailableException(
-        geminiError.message || 'Gemini service is unavailable',
+        'Trợ lý AI tạm thời gặp sự cố. Bạn vui lòng thử lại sau.',
       );
     }
   }

@@ -296,62 +296,15 @@ export class OrdersService implements OnModuleInit {
       throw new BadRequestException('Only pending orders can be confirmed');
     }
 
-    const province = order.shippingAddress.province;
-    const ward = order.shippingAddress.ward;
-    const now = new Date();
+    // Xác nhận đơn hàng -> Chuyển sang Confirmed (Chờ Chủ shop đóng gói & Bàn giao)
+    await this.orderModel.findByIdAndUpdate(id, {
+      orderStatus: OrderStatus.Confirmed,
+    }).exec();
 
-    // Bước 1: Tìm ShippingUnit phụ trách phường/xã
-    const shippingUnit = await this.shippingUnitModel
-      .findOne({ coverageAreas: { $elemMatch: { province, ward } } })
-      .exec();
-
-    if (!shippingUnit) {
-      // Không tìm được ShippingUnit → chỉ confirm
-      await this.orderModel.findByIdAndUpdate(id, {
-        orderStatus: OrderStatus.Confirmed,
-      }).exec();
-
-      const updatedOrder = await this.orderModel.findById(id).exec();
-      return {
-        order: updatedOrder,
-        autoAssignment: {
-          shippingUnit: false,
-          shipper: false,
-          message: `Khu vực "${ward}, ${province}" chưa có đơn vị vận chuyển phụ trách. Admin cần gán thủ công.`,
-        },
-      };
-    }
-
-    // Bước 2: Tìm Shipper round-robin theo ward
-    const shipperResult = await this.shippingUnitsService.autoAssignShipperByArea(
-      province,
-      ward,
-      shippingUnit.userId.toString(),
-    );
-
-    const updateData: Record<string, unknown> = {
-      orderStatus: OrderStatus.Assigned,
-      shippingUnitId: shippingUnit.userId,
-      assignedAt: now,
-    };
-
-    if (shipperResult) {
-      updateData.shipperId = shipperResult.shipperId;
-    }
-
-    await this.orderModel.findByIdAndUpdate(id, updateData).exec();
     const updatedOrder = await this.orderModel.findById(id).exec();
-
     return {
       order: updatedOrder,
-      autoAssignment: {
-        shippingUnit: true,
-        shipper: !!shipperResult,
-        shipperName: shipperResult?.shipperName || null,
-        message: shipperResult
-          ? `Đơn hàng đã được tự động phân cho shipper ${shipperResult.shipperName} (${ward})`
-          : `Đã gán đơn vị vận chuyển nhưng chưa tìm thấy shipper phụ trách "${ward}". Đơn vị vận chuyển sẽ phân tay.`,
-      },
+      message: 'Đã xác nhận đơn hàng thành công. Vui lòng đóng gói và bấm Bàn giao để kích hoạt gán Shipper.',
     };
   }
 
@@ -448,29 +401,30 @@ export class OrdersService implements OnModuleInit {
       .exec();
   }
 
-  /** [Shipper] Nhận đơn: assigned → shipping */
+  /** [Shipper] Nhận đơn: assigned → shipping (Chỉ khi Chủ shop đã bàn giao) */
   async pickupOrder(orderId: string, shipperId: string, dto: PickupOrderDto) {
-    const order = await this.orderModel
-      .findOneAndUpdate(
-        {
-          _id: new Types.ObjectId(orderId),
-          shipperId: new Types.ObjectId(shipperId),
-          orderStatus: OrderStatus.Assigned,
-        },
-        {
-          orderStatus: OrderStatus.Shipping,
-          shippedAt: new Date(),
-          shippingProvider: dto.shippingProvider,
-          trackingCode: dto.trackingCode,
-        },
-        { new: true },
-      )
-      .exec();
+    const order = await this.orderModel.findOne({
+      _id: new Types.ObjectId(orderId),
+      shipperId: new Types.ObjectId(shipperId),
+      orderStatus: OrderStatus.Assigned,
+    }).exec();
 
     if (!order) {
       throw new NotFoundException('Order not found, not assigned to you, or not in assigned status');
     }
-    return order;
+
+    // Kiểm tra tất cả sản phẩm của Chủ shop trong đơn đã được bấm "Bàn giao cho vận chuyển" chưa
+    const allHandedOver = order.items.every((item) => item.handedOverToShipping);
+    if (!allHandedOver) {
+      throw new BadRequestException('Chủ shop chưa bấm Bàn giao sản phẩm cho đơn vị vận chuyển');
+    }
+
+    order.orderStatus = OrderStatus.Shipping;
+    order.shippedAt = new Date();
+    if (dto.shippingProvider) order.shippingProvider = dto.shippingProvider;
+    if (dto.trackingCode) order.trackingCode = dto.trackingCode;
+
+    return order.save();
   }
 
   /** [Shipper] Hoàn thành giao hàng: shipping → completed. Đơn COD tự động set paid. */
@@ -568,7 +522,7 @@ export class OrdersService implements OnModuleInit {
     const order = await this.orderModel.findOne({
       _id: new Types.ObjectId(orderId),
       'items.ownerId': new Types.ObjectId(ownerId),
-      orderStatus: { $in: [OrderStatus.Assigned, OrderStatus.Shipping] },
+      orderStatus: { $in: [OrderStatus.Confirmed, OrderStatus.Assigned, OrderStatus.Shipping] },
     }).exec();
 
     if (!order) {
@@ -597,6 +551,41 @@ export class OrdersService implements OnModuleInit {
         arrayFilters: [{ 'ownerItem.ownerId': new Types.ObjectId(ownerId) }],
       },
     ).exec();
+
+    // Reload đơn hàng để kiểm tra tất cả các Shop đã bàn giao xong chưa
+    const reloadedOrder = await this.orderModel.findById(orderId).exec();
+    if (reloadedOrder) {
+      const isFullyHandedOver = reloadedOrder.items.every((i) => i.handedOverToShipping);
+      if (isFullyHandedOver) {
+        // Kích hoạt thuật toán tự động gán Shipper & Đơn vị vận chuyển (Round-Robin)
+        const province = reloadedOrder.shippingAddress.province;
+        const ward = reloadedOrder.shippingAddress.ward;
+        const now = new Date();
+
+        const shippingUnit = await this.shippingUnitModel
+          .findOne({ coverageAreas: { $elemMatch: { province, ward } } })
+          .exec();
+
+        const updateData: Record<string, unknown> = {
+          orderStatus: OrderStatus.Assigned,
+          assignedAt: now,
+        };
+
+        if (shippingUnit) {
+          updateData.shippingUnitId = shippingUnit.userId;
+          const shipperResult = await this.shippingUnitsService.autoAssignShipperByArea(
+            province,
+            ward,
+            shippingUnit.userId.toString(),
+          );
+          if (shipperResult) {
+            updateData.shipperId = shipperResult.shipperId;
+          }
+        }
+
+        await this.orderModel.findByIdAndUpdate(orderId, updateData).exec();
+      }
+    }
 
     return this.findOneByOwner(orderId, ownerId);
   }

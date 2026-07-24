@@ -8,13 +8,13 @@ export class Setting {
   @Prop({ required: true, unique: true, default: 'sepay' })
   key: string;
 
-  @Prop({ required: true, trim: true, default: 'MBBank' })
+  @Prop({ required: true, trim: true, default: '' })
   bankName: string;
 
-  @Prop({ required: true, trim: true, default: '03888888888' })
+  @Prop({ required: true, trim: true, default: '' })
   accountNumber: string;
 
-  @Prop({ required: true, trim: true, default: 'GIA DUNG 24H' })
+  @Prop({ required: true, trim: true, default: '' })
   accountHolder: string;
 
   @Prop({ trim: true, default: '' })

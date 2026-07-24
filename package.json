@@ -9,7 +9,7 @@
     "start:dev": "nest start --watch",
     "dev": "nest start --watch",
     "start:prod": "node dist/main.js",
-    "test": "node --require ts-node/register --test src/reports/reports.service.spec.ts src/auth/auth.security.spec.ts src/orders/orders.owner.spec.ts src/products/products.owner.spec.ts src/coupons/coupons.owner.spec.ts src/database/seed.spec.ts src/upload/upload.service.spec.ts",
+    "test": "node --require ts-node/register --test src/reports/reports.service.spec.ts src/auth/auth.security.spec.ts src/coupons/coupons.owner.spec.ts src/database/seed.spec.ts src/upload/upload.service.spec.ts src/settings/settings.sepay.spec.ts src/payments/payments.sepay.spec.ts",
     "lint": "eslint \"src/**/*.ts\" --fix",
     "seed": "ts-node src/database/seed.ts",
     "migrate:order-owners": "ts-node src/database/migrations/backfill-order-item-owners.ts",
@@ -39,6 +39,7 @@
     "passport-jwt": "^4.0.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
+    "sepay-pg-node": "^1.0.0",
     "vnpay": "^2.5.0"
   },
   "devDependencies": {

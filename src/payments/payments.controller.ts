@@ -142,8 +142,8 @@ export class SepayWebhookController {
     @Body() payload: Record<string, unknown>,
     @Req() request: Request,
   ) {
-    const authHeader = request.headers['authorization'] as string | undefined;
-    return this.paymentsService.handleSepayWebhook(payload, authHeader);
+    const secretKeyHeader = request.headers['x-secret-key'] as string | undefined;
+    return this.paymentsService.handleSepayIpn(payload, secretKeyHeader);
   }
 }
 

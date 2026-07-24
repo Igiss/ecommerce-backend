@@ -1,7 +1,15 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+  ServiceUnavailableException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
+import { SePayPgClient } from 'sepay-pg-node';
 import { ReturnQueryFromVNPay, VNPay, VnpLocale } from 'vnpay';
 import { OrderStatus } from '../common/enums/order-status.enum';
 import { PaymentStatus } from '../common/enums/payment-status.enum';
@@ -10,9 +18,8 @@ import { Payment, PaymentDocument } from '../database/schemas/payment.schema';
 import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../database/schemas/notification.schema';
-import { SettingsService } from '../settings/settings.service';
 import { SettingDocument } from '../database/schemas/setting.schema';
-import { SePayPgClient } from './sepay-pg.client';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class PaymentsService {
@@ -317,20 +324,32 @@ export class PaymentsService {
     const shortCode = order._id.toString().slice(-6).toUpperCase();
     const paymentCode = `DH${shortCode}`;
 
-    // Read SePay config from env or database
-    let dbSettings: SettingDocument | null = null;
-    try {
-      dbSettings = await this.settingsService.getSepaySettings();
-    } catch {
-      // Fallback
+    const settings = await this.settingsService.getSepaySettings();
+    const bankName = settings.bankName?.trim() || '';
+    const accountNumber = settings.accountNumber?.trim() || '';
+    const accountHolder = settings.accountHolder?.trim() || '';
+
+    if (
+      !bankName ||
+      !accountNumber ||
+      !accountHolder ||
+      bankName === 'MBBank' ||
+      accountNumber === '03888888888' ||
+      accountHolder === 'GIA DUNG 24H'
+    ) {
+      throw new ServiceUnavailableException(
+        'SePay bank account is not configured or could not be verified',
+      );
     }
 
-    const bankName = dbSettings?.bankName || this.configService.get<string>('SEPAY_BANK_NAME') || '';
-    const accountNumber = dbSettings?.accountNumber || this.configService.get<string>('SEPAY_ACC_NUMBER') || '';
-    const accountHolder = dbSettings?.accountHolder || this.configService.get<string>('SEPAY_ACC_HOLDER') || '';
-
     // SePay official VietQR URL endpoint format
-    const qrUrl = `https://qr.sepay.vn/img?acc=${accountNumber}&bank=${bankName}&amount=${order.totalAmount}&des=${paymentCode}`;
+    const qrParams = new URLSearchParams({
+      acc: accountNumber,
+      bank: bankName,
+      amount: String(order.totalAmount),
+      des: paymentCode,
+    });
+    const qrUrl = `https://qr.sepay.vn/img?${qrParams.toString()}`;
 
     // Upsert payment document
     await this.paymentModel.findOneAndUpdate(
@@ -387,19 +406,26 @@ export class PaymentsService {
     const invoiceNumber = `DH${shortCode}`;
 
     const env = (this.configService.get<string>('SEPAY_ENV') as 'sandbox' | 'production') || 'sandbox';
-    const merchant_id = this.configService.get<string>('SEPAY_MERCHANT_ID') || '';
-    const secret_key = this.configService.get<string>('SEPAY_SECRET_KEY') || '';
+    const merchantId = this.configService.get<string>('SEPAY_MERCHANT_ID') || '';
+    const secretKey = this.configService.get<string>('SEPAY_SECRET_KEY') || '';
+
+    if (!merchantId || !secretKey) {
+      throw new ServiceUnavailableException(
+        'SePay Payment Gateway credentials are not configured',
+      );
+    }
 
     const client = new SePayPgClient({
       env,
-      merchant_id,
-      secret_key,
+      merchant_id: merchantId,
+      secret_key: secretKey,
     });
 
     const frontendUrl = this.configService.get<string>('FRONTEND_URL') || 'http://localhost:5173';
 
     const checkoutURL = client.checkout.initCheckoutUrl();
     const checkoutFormfields = client.checkout.initOneTimePaymentFields({
+      operation: 'PURCHASE',
       payment_method: 'BANK_TRANSFER',
       order_invoice_number: invoiceNumber,
       order_amount: order.totalAmount,
@@ -453,6 +479,96 @@ export class PaymentsService {
       return { success: false, message: 'No payment code found in transaction content' };
     }
 
+    const amountPaid = Number(transferAmount || 0);
+    return this.confirmSepayPayment({
+      paymentCode,
+      amountPaid,
+      providerTransactionId: String(referenceCode || ''),
+      metadata: {
+        gateway,
+        accountNumber,
+        referenceCode,
+        content,
+        transferAmount: amountPaid,
+        payload,
+      },
+    });
+  }
+
+  async handleSepayIpn(
+    payload: Record<string, unknown>,
+    secretKeyHeader?: string,
+  ) {
+    const configuredSecret =
+      this.configService.get<string>('SEPAY_SECRET_KEY')?.trim() || '';
+    if (!configuredSecret) {
+      throw new ServiceUnavailableException(
+        'SePay Payment Gateway secret is not configured',
+      );
+    }
+    if (!secretKeyHeader || secretKeyHeader !== configuredSecret) {
+      throw new UnauthorizedException('Invalid SePay IPN secret');
+    }
+
+    const notificationType = String(payload.notification_type || '');
+    if (notificationType !== 'ORDER_PAID') {
+      return {
+        success: true,
+        message: `Ignored SePay notification: ${notificationType || 'unknown'}`,
+      };
+    }
+
+    const ipnOrder =
+      payload.order && typeof payload.order === 'object'
+        ? (payload.order as Record<string, unknown>)
+        : {};
+    const transaction =
+      payload.transaction && typeof payload.transaction === 'object'
+        ? (payload.transaction as Record<string, unknown>)
+        : {};
+    const paymentCode = String(ipnOrder.order_invoice_number || '').toUpperCase();
+    const amountPaid = Number(
+      transaction.transaction_amount || ipnOrder.order_amount || 0,
+    );
+
+    if (!paymentCode) {
+      return { success: false, message: 'Missing SePay order invoice number' };
+    }
+    if (
+      String(ipnOrder.order_status || '') !== 'CAPTURED' ||
+      String(transaction.transaction_status || '') !== 'APPROVED'
+    ) {
+      return { success: false, message: 'SePay payment is not approved' };
+    }
+
+    return this.confirmSepayPayment({
+      paymentCode,
+      amountPaid,
+      providerTransactionId: String(
+        transaction.transaction_id || transaction.id || '',
+      ),
+      metadata: {
+        notificationType,
+        sepayOrder: ipnOrder,
+        transaction,
+        payload,
+      },
+    });
+  }
+
+  private async confirmSepayPayment(options: {
+    paymentCode: string;
+    amountPaid: number;
+    providerTransactionId: string;
+    metadata: Record<string, unknown>;
+  }) {
+    const {
+      paymentCode,
+      amountPaid,
+      providerTransactionId,
+      metadata,
+    } = options;
+
     // Find order by transactionCode or short ID
     let order = await this.orderModel.findOne({ transactionCode: paymentCode }).exec();
     if (!order) {
@@ -470,7 +586,6 @@ export class PaymentsService {
       return { success: true, message: 'Order already paid' };
     }
 
-    const amountPaid = Number(transferAmount || 0);
     if (amountPaid < order.totalAmount) {
       return { success: false, message: `Amount paid (${amountPaid}) is less than total order amount (${order.totalAmount})` };
     }
@@ -483,21 +598,14 @@ export class PaymentsService {
     order.transactionCode = paymentCode;
     await order.save();
 
-    const refCodeStr = String(referenceCode || '');
     await this.paymentModel.findOneAndUpdate(
       { orderId: order._id },
       {
         status: PaymentStatus.Paid,
         paidAt,
-        providerTransactionId: refCodeStr || `SEPAY_${Date.now()}`,
-        metadata: {
-          gateway,
-          accountNumber,
-          referenceCode,
-          content,
-          transferAmount: amountPaid,
-          payload,
-        },
+        providerTransactionId:
+          providerTransactionId || `SEPAY_${Date.now()}`,
+        metadata,
       },
     );
 

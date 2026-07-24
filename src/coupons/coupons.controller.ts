@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
@@ -22,11 +22,16 @@ import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
 
 @ApiTags('Coupons')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('coupons')
 export class CouponsController {
   constructor(private readonly couponsService: CouponsService) {}
+
+  @Get('active')
+  @ApiOperation({ summary: '[Public] Lấy danh sách mã giảm giá đang kích hoạt' })
+  @ApiOkResponse({ description: 'Danh sách coupon đang kích hoạt và chưa hết hạn' })
+  findActive() {
+    return this.couponsService.findActiveCoupons();
+  }
 
   @Post('validate')
   @ApiOperation({ summary: '[User] Kiểm tra mã giảm giá và tính số tiền được giảm' })
@@ -58,23 +63,29 @@ export class CouponsController {
   }
 
   @Get()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: '[Admin/Owner] Lấy danh sách coupon' })
   @ApiOkResponse({ description: 'Danh sách coupon, mới nhất trước' })
   @Roles(Role.Admin)
-  findAll() {
-    return this.couponsService.findAll();
+  findAll(@Query('scope') scope?: 'system' | 'owner' | 'all') {
+    return this.couponsService.findAll(scope || 'system');
   }
 
   @Post()
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: '[Admin/Owner] Tạo coupon mới' })
   @ApiCreatedResponse({ description: 'Coupon đã được tạo' })
   @ApiBadRequestResponse({ description: 'Mã đã tồn tại hoặc giá trị giảm không hợp lệ' })
   @Roles(Role.Admin)
-  create(@CurrentUser() user: JwtPayload, @Body() dto: CreateCouponDto) {
-    return this.couponsService.create(dto, user.sub);
+  create(@Body() dto: CreateCouponDto) {
+    return this.couponsService.create(dto, undefined);
   }
 
   @Patch(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: '[Admin/Owner] Cập nhật coupon' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của coupon' })
   @ApiOkResponse({ description: 'Coupon sau khi cập nhật' })
@@ -86,6 +97,8 @@ export class CouponsController {
   }
 
   @Delete(':id')
+  @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard, RolesGuard)
   @ApiOperation({ summary: '[Admin/Owner] Xóa coupon' })
   @ApiParam({ name: 'id', description: 'MongoDB ObjectId của coupon' })
   @ApiOkResponse({ description: 'Coupon đã được xóa' })

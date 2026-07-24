@@ -32,6 +32,14 @@ export class ReportsController {
     return this.reportsService.getDashboard(this.getOwnerId(user), query);
   }
 
+  @Get('analytics')
+  @ApiOperation({
+    summary: '[Admin] Thống kê điều hành, biểu đồ và cảnh báo toàn hệ thống',
+  })
+  getAnalytics(@Query() query: RevenueQueryDto) {
+    return this.reportsService.getAdminAnalytics(query.period || '30days');
+  }
+
   @Get('revenue-chart')
   @ApiOperation({ summary: '[Admin/Owner] Biểu đồ doanh thu theo phạm vi quyền' })
   getRevenueChart(@CurrentUser() user: JwtPayload, @Query() query: RevenueQueryDto) {

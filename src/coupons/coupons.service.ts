@@ -6,6 +6,7 @@ import {
   CouponUsage,
   CouponUsageDocument,
 } from '../database/schemas/coupon-usage.schema';
+import { Role } from '../common/enums/role.enum';
 import { CreateCouponDto } from './dto/create-coupon.dto';
 import { UpdateCouponDto } from './dto/update-coupon.dto';
 import { ValidateCouponDto } from './dto/validate-coupon.dto';
@@ -19,16 +20,56 @@ export class CouponsService {
   ) {}
 
   async validate(dto: ValidateCouponDto) {
-    const coupon = await this.couponModel.findOne({ code: this.normalizeCode(dto.code) }).exec();
+    const coupon = await this.couponModel
+      .findOne({ code: this.normalizeCode(dto.code) })
+      .populate('ownerId', 'fullName storeName avatar email')
+      .exec();
     if (!coupon) {
       throw new NotFoundException('Coupon not found');
     }
 
-    this.assertUsable(coupon, dto.orderTotal);
+    let eligibleSubtotal = dto.orderTotal;
+
+    if (dto.items && dto.items.length > 0) {
+      const eligibleItems = dto.items.filter((item) => {
+        if (coupon.ownerId) {
+          const ownerObj = coupon.ownerId as unknown as { _id?: Types.ObjectId; role?: string; storeName?: string };
+          const couponOwnerIdStr = ownerObj._id ? ownerObj._id.toString() : String(coupon.ownerId);
+          if (item.ownerId && String(item.ownerId) !== couponOwnerIdStr) {
+            return false;
+          }
+        }
+        if (
+          (coupon.applicableProductIds || []).length &&
+          !(coupon.applicableProductIds || []).some(
+            (id) => id.toString() === item.productId?.toString(),
+          )
+        ) {
+          return false;
+        }
+        if (
+          (coupon.applicableCategoryIds || []).length &&
+          !(coupon.applicableCategoryIds || []).some(
+            (id) => id.toString() === item.categoryId?.toString(),
+          )
+        ) {
+          return false;
+        }
+        return true;
+      });
+
+      if (eligibleItems.length === 0) {
+        throw new BadRequestException('Mã giảm giá này không áp dụng cho các sản phẩm trong giỏ hàng của bạn');
+      }
+
+      eligibleSubtotal = eligibleItems.reduce((sum, item) => sum + (item.total || 0), 0);
+    }
+
+    this.assertUsable(coupon, eligibleSubtotal);
 
     return {
       coupon,
-      actualDiscount: this.calculateDiscount(coupon, dto.orderTotal),
+      actualDiscount: this.calculateDiscount(coupon, eligibleSubtotal),
     };
   }
 
@@ -123,8 +164,40 @@ export class CouponsService {
     }
   }
 
-  findAll() {
-    return this.couponModel.find().sort({ createdAt: -1 }).exec();
+  async findAll(scope?: 'system' | 'owner' | 'all') {
+    const list = await this.couponModel
+      .find()
+      .populate('ownerId', 'fullName storeName avatar email role')
+      .sort({ createdAt: -1 })
+      .exec();
+
+    if (scope === 'system') {
+      return list.filter((c) => {
+        if (!c.ownerId) return true;
+        const owner = c.ownerId as unknown as { role?: string; storeName?: string };
+        return owner.role === Role.Admin || (!owner.storeName && owner.role !== Role.Owner);
+      });
+    }
+
+    if (scope === 'owner') {
+      return list.filter((c) => {
+        if (!c.ownerId) return false;
+        const owner = c.ownerId as unknown as { role?: string; storeName?: string };
+        return owner.role === Role.Owner || Boolean(owner.storeName);
+      });
+    }
+
+    return list;
+  }
+
+  findActiveCoupons() {
+    return this.couponModel
+      .find({
+        isActive: true,
+      })
+      .populate('ownerId', 'fullName storeName avatar email')
+      .sort({ createdAt: -1 })
+      .exec();
   }
 
   async create(dto: CreateCouponDto, ownerId?: string) {
@@ -142,19 +215,38 @@ export class CouponsService {
   }
 
   async update(id: string, dto: UpdateCouponDto) {
-    if (dto.discountType && dto.discountAmount !== undefined) {
-      this.validateDiscount(dto.discountType, dto.discountAmount);
-    }
     const current = await this.couponModel.findById(id).exec();
     if (!current) {
       throw new NotFoundException('Coupon not found');
     }
-    this.validateDates(
-      dto.startsAt ?? current.startsAt,
-      dto.expiryDate ?? current.expiryDate,
-    );
-    const update = { ...dto, code: dto.code ? this.normalizeCode(dto.code) : undefined };
-    const coupon = await this.couponModel.findByIdAndUpdate(id, update, { new: true }).exec();
+
+    const effectiveDiscountType = dto.discountType ?? current.discountType;
+    const effectiveDiscountAmount = dto.discountAmount ?? current.discountAmount;
+    this.validateDiscount(effectiveDiscountType, effectiveDiscountAmount);
+
+    const effectiveStartsAt = dto.startsAt ?? current.startsAt;
+    const effectiveExpiryDate = dto.expiryDate ?? current.expiryDate;
+    this.validateDates(effectiveStartsAt, effectiveExpiryDate);
+
+    if (dto.code) {
+      const normalizedCode = this.normalizeCode(dto.code);
+      if (normalizedCode !== current.code) {
+        const exists = await this.couponModel.exists({ code: normalizedCode });
+        if (exists) {
+          throw new BadRequestException('Coupon code already exists');
+        }
+      }
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      ...dto,
+      code: dto.code ? this.normalizeCode(dto.code) : undefined,
+      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+      startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
+    };
+    Object.keys(updatePayload).forEach((key) => updatePayload[key] === undefined && delete updatePayload[key]);
+
+    const coupon = await this.couponModel.findByIdAndUpdate(id, updatePayload, { new: true }).exec();
     if (!coupon) {
       throw new NotFoundException('Coupon not found');
     }
@@ -177,24 +269,43 @@ export class CouponsService {
   }
 
   async updateByOwner(id: string, ownerId: string, dto: UpdateCouponDto) {
-    if (dto.discountType && dto.discountAmount !== undefined) {
-      this.validateDiscount(dto.discountType, dto.discountAmount);
-    }
     const current = await this.couponModel
       .findOne({ _id: new Types.ObjectId(id), ownerId: new Types.ObjectId(ownerId) })
       .exec();
     if (!current) {
       throw new NotFoundException('Coupon not found');
     }
-    this.validateDates(
-      dto.startsAt ?? current.startsAt,
-      dto.expiryDate ?? current.expiryDate,
-    );
-    const update = { ...dto, code: dto.code ? this.normalizeCode(dto.code) : undefined };
+
+    const effectiveDiscountType = dto.discountType ?? current.discountType;
+    const effectiveDiscountAmount = dto.discountAmount ?? current.discountAmount;
+    this.validateDiscount(effectiveDiscountType, effectiveDiscountAmount);
+
+    const effectiveStartsAt = dto.startsAt ?? current.startsAt;
+    const effectiveExpiryDate = dto.expiryDate ?? current.expiryDate;
+    this.validateDates(effectiveStartsAt, effectiveExpiryDate);
+
+    if (dto.code) {
+      const normalizedCode = this.normalizeCode(dto.code);
+      if (normalizedCode !== current.code) {
+        const exists = await this.couponModel.exists({ code: normalizedCode });
+        if (exists) {
+          throw new BadRequestException('Coupon code already exists');
+        }
+      }
+    }
+
+    const updatePayload: Record<string, unknown> = {
+      ...dto,
+      code: dto.code ? this.normalizeCode(dto.code) : undefined,
+      expiryDate: dto.expiryDate ? new Date(dto.expiryDate) : undefined,
+      startsAt: dto.startsAt ? new Date(dto.startsAt) : undefined,
+    };
+    Object.keys(updatePayload).forEach((key) => updatePayload[key] === undefined && delete updatePayload[key]);
+
     const coupon = await this.couponModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id), ownerId: new Types.ObjectId(ownerId) },
-        update,
+        updatePayload,
         { new: true },
       )
       .exec();

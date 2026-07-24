@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCookieAuth,
@@ -11,6 +11,7 @@ import { JwtPayload } from '../auth/interfaces/jwt-payload.interface';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
+import { RevenueQueryDto } from './dto/revenue-query.dto';
 import { ReportsService } from './reports.service';
 
 @ApiTags('Reports')
@@ -30,6 +31,20 @@ export class OwnerReportsController {
   })
   getDashboard(@CurrentUser() user: JwtPayload) {
     return this.reportsService.getOwnerDashboard(user.sub);
+  }
+
+  @Get('analytics')
+  @ApiOperation({
+    summary: '[Owner] Thống kê kinh doanh, biểu đồ doanh thu và top sản phẩm',
+  })
+  getAnalytics(
+    @CurrentUser() user: JwtPayload,
+    @Query() query: RevenueQueryDto,
+  ) {
+    return this.reportsService.getOwnerAnalytics(
+      user.sub,
+      query.period || '30days',
+    );
   }
 
   @Get('ai-trends')

@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, PipelineStage, Types } from 'mongoose';
 import { OrderStatus } from '../common/enums/order-status.enum';
+import { Role } from '../common/enums/role.enum';
 import { Order, OrderDocument } from '../database/schemas/order.schema';
 import { Product, ProductDocument } from '../database/schemas/product.schema';
 import { Coupon, CouponDocument } from '../database/schemas/coupon.schema';
@@ -79,6 +80,223 @@ export class ReportsService {
       ...(orderSummary[0] || { orderCount: 0, revenue: 0, itemCount: 0 }),
       productCount,
       couponCount,
+    };
+  }
+
+  async getOwnerAnalytics(
+    ownerId: string,
+    period: '7days' | '30days' | '12months' = '30days',
+  ) {
+    const ownerObjectId = new Types.ObjectId(ownerId);
+    const now = new Date();
+    const startDate = new Date(now);
+
+    if (period === '12months') {
+      startDate.setMonth(now.getMonth() - 11, 1);
+    } else {
+      startDate.setDate(now.getDate() - (period === '7days' ? 6 : 29));
+    }
+    startDate.setHours(0, 0, 0, 0);
+
+    const dateQuery: ReportDateQueryDto = {
+      from: startDate.toISOString(),
+      to: now.toISOString(),
+    };
+
+    const [lifetime, dashboard, revenueChart, topProducts, statusResult] =
+      await Promise.all([
+        this.getOwnerDashboard(ownerId),
+        this.getDashboard(ownerId, dateQuery),
+        this.getRevenueChart(period, ownerId),
+        this.getTopProducts(ownerId, dateQuery),
+        this.orderModel
+          .aggregate<{
+            byStatus: Array<{
+              _id: OrderStatus;
+              orders: number;
+              items: number;
+            }>;
+            totals: Array<{
+              orderCount: number;
+              itemCount: number;
+            }>;
+          }>([
+            {
+              $match: {
+                'items.ownerId': ownerObjectId,
+                createdAt: { $gte: startDate, $lte: now },
+              },
+            },
+            { $unwind: '$items' },
+            { $match: { 'items.ownerId': ownerObjectId } },
+            {
+              $facet: {
+                byStatus: [
+                  {
+                    $group: {
+                      _id: '$items.fulfillmentStatus',
+                      orderIds: { $addToSet: '$_id' },
+                      items: { $sum: '$items.quantity' },
+                    },
+                  },
+                  {
+                    $project: {
+                      orders: { $size: '$orderIds' },
+                      items: 1,
+                    },
+                  },
+                ],
+                totals: [
+                  {
+                    $group: {
+                      _id: null,
+                      orderIds: { $addToSet: '$_id' },
+                      itemCount: { $sum: '$items.quantity' },
+                    },
+                  },
+                  {
+                    $project: {
+                      _id: 0,
+                      orderCount: { $size: '$orderIds' },
+                      itemCount: 1,
+                    },
+                  },
+                ],
+              },
+            },
+          ])
+          .exec(),
+      ]);
+
+    const statusData = statusResult[0] || { byStatus: [], totals: [] };
+
+    return {
+      period,
+      periodStart: startDate,
+      periodEnd: now,
+      lifetime,
+      dashboard,
+      revenueChart,
+      topProducts,
+      statusBreakdown: statusData.byStatus,
+      periodOrderCount: statusData.totals[0]?.orderCount || 0,
+      periodItemCount: statusData.totals[0]?.itemCount || 0,
+    };
+  }
+
+  async getAdminAnalytics(
+    period: '7days' | '30days' | '12months' = '30days',
+  ) {
+    const now = new Date();
+    const startDate = new Date(now);
+
+    if (period === '12months') {
+      startDate.setMonth(now.getMonth() - 11, 1);
+    } else {
+      startDate.setDate(now.getDate() - (period === '7days' ? 6 : 29));
+    }
+    startDate.setHours(0, 0, 0, 0);
+
+    const dateQuery: ReportDateQueryDto = {
+      from: startDate.toISOString(),
+      to: now.toISOString(),
+    };
+
+    const [dashboard, revenueChart, topProducts, statusResult, userResult] =
+      await Promise.all([
+        this.getDashboard(undefined, dateQuery),
+        this.getRevenueChart(period),
+        this.getTopProducts(undefined, dateQuery),
+        this.orderModel
+          .aggregate<{
+            byStatus: Array<{ _id: OrderStatus; orders: number }>;
+            totals: Array<{ orderCount: number }>;
+          }>([
+            {
+              $match: {
+                createdAt: { $gte: startDate, $lte: now },
+              },
+            },
+            {
+              $facet: {
+                byStatus: [
+                  {
+                    $group: {
+                      _id: '$orderStatus',
+                      orders: { $sum: 1 },
+                    },
+                  },
+                ],
+                totals: [
+                  { $count: 'orderCount' },
+                ],
+              },
+            },
+          ])
+          .exec(),
+        this.userModel
+          .aggregate<{
+            totalUsers: Array<{ count: number }>;
+            customers: Array<{ count: number }>;
+            owners: Array<{ count: number }>;
+            pendingOwners: Array<{ count: number }>;
+            blockedUsers: Array<{ count: number }>;
+          }>([
+            {
+              $facet: {
+                totalUsers: [{ $count: 'count' }],
+                customers: [
+                  { $match: { role: Role.User } },
+                  { $count: 'count' },
+                ],
+                owners: [
+                  { $match: { role: Role.Owner } },
+                  { $count: 'count' },
+                ],
+                pendingOwners: [
+                  {
+                    $match: {
+                      role: Role.User,
+                      isRequestingOwner: true,
+                    },
+                  },
+                  { $count: 'count' },
+                ],
+                blockedUsers: [
+                  { $match: { status: 'blocked' } },
+                  { $count: 'count' },
+                ],
+              },
+            },
+          ])
+          .exec(),
+      ]);
+
+    const statusData = statusResult[0] || { byStatus: [], totals: [] };
+    const userData = userResult[0] || {
+      totalUsers: [],
+      customers: [],
+      owners: [],
+      pendingOwners: [],
+      blockedUsers: [],
+    };
+
+    return {
+      period,
+      periodStart: startDate,
+      periodEnd: now,
+      dashboard,
+      revenueChart,
+      topProducts,
+      statusBreakdown: statusData.byStatus,
+      periodOrderCount: statusData.totals[0]?.orderCount || 0,
+      users: {
+        total: userData.totalUsers[0]?.count || 0,
+        customers: userData.customers[0]?.count || 0,
+        owners: userData.owners[0]?.count || 0,
+        pendingOwners: userData.pendingOwners[0]?.count || 0,
+        blocked: userData.blockedUsers[0]?.count || 0,
+      },
     };
   }
 

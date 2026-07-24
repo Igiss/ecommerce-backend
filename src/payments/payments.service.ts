@@ -317,7 +317,7 @@ export class PaymentsService {
     const paymentCode = `DH${shortCode}`;
 
     // Read SePay config from env or database
-    let dbSettings: any = null;
+    let dbSettings: Record<string, string> | null = null;
     try {
       dbSettings = await this.settingsService.getSepaySettings();
     } catch {
@@ -420,8 +420,8 @@ export class PaymentsService {
     };
   }
 
-  async handleSepayWebhook(payload: Record<string, any>, authHeader?: string) {
-    let dbSettings: any = null;
+  async handleSepayWebhook(payload: Record<string, unknown>, authHeader?: string) {
+    let dbSettings: Record<string, string> | null = null;
     try {
       dbSettings = await this.settingsService.getSepaySettings();
     } catch {

@@ -11,6 +11,7 @@ import { UpdatePaymentStatusDto } from './dto/update-payment-status.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../database/schemas/notification.schema';
 import { SettingsService } from '../settings/settings.service';
+import { SettingDocument } from '../database/schemas/setting.schema';
 import { SePayPgClient } from './sepay-pg.client';
 
 @Injectable()
@@ -317,7 +318,7 @@ export class PaymentsService {
     const paymentCode = `DH${shortCode}`;
 
     // Read SePay config from env or database
-    let dbSettings: Record<string, string> | null = null;
+    let dbSettings: SettingDocument | null = null;
     try {
       dbSettings = await this.settingsService.getSepaySettings();
     } catch {
@@ -421,7 +422,7 @@ export class PaymentsService {
   }
 
   async handleSepayWebhook(payload: Record<string, unknown>, authHeader?: string) {
-    let dbSettings: Record<string, string> | null = null;
+    let dbSettings: SettingDocument | null = null;
     try {
       dbSettings = await this.settingsService.getSepaySettings();
     } catch {
@@ -433,16 +434,16 @@ export class PaymentsService {
     if (sepayApiKey) {
       const token = (authHeader || '').replace('Bearer ', '').trim();
       if (token !== sepayApiKey) {
-        throw new ForbiddenException('Invalid SePay Webhook Token');
+        return { success: false, message: 'Unauthorized Webhook request' };
       }
     }
 
     const { code, content, transferAmount, referenceCode, gateway, accountNumber } = payload;
     
     // Extract payment code from code field or content string (regex DH[A-Z0-9]+)
-    let paymentCode = code || '';
+    let paymentCode = String(code || '');
     if (!paymentCode && content) {
-      const match = (content as string).match(/DH[A-Z0-9]+/i);
+      const match = String(content).match(/DH[A-Z0-9]+/i);
       if (match) {
         paymentCode = match[0].toUpperCase();
       }
@@ -482,12 +483,13 @@ export class PaymentsService {
     order.transactionCode = paymentCode;
     await order.save();
 
+    const refCodeStr = String(referenceCode || '');
     await this.paymentModel.findOneAndUpdate(
       { orderId: order._id },
       {
         status: PaymentStatus.Paid,
         paidAt,
-        providerTransactionId: referenceCode || `SEPAY_${Date.now()}`,
+        providerTransactionId: refCodeStr || `SEPAY_${Date.now()}`,
         metadata: {
           gateway,
           accountNumber,

@@ -66,26 +66,29 @@ export class OrdersService implements OnModuleInit {
         await order.save();
 
         for (const item of order.items) {
+          if (!item.productId) continue;
+
           await this.productModel
             .findByIdAndUpdate(item.productId, {
               $inc: { stock: item.quantity, soldCount: -item.quantity },
             })
             .exec();
 
-          await this.inventoryLogsService.createLog({
-            productId: item.productId.toString(),
-            type: InventoryLogType.Import,
-            quantity: item.quantity,
-            note: `Auto-restock for cancelled unpaid order ${order._id}`,
-          });
+          await this.inventoryLogsService.createLog(
+            item.productId.toString(),
+            item.quantity,
+            InventoryLogType.CANCEL_ORDER,
+            order._id.toString(),
+            `Auto-restock for cancelled unpaid order ${order._id}`,
+          );
         }
 
-        await this.notificationsService.createNotification({
+        await this.notificationsService.create({
           userId: order.userId.toString(),
-          type: NotificationType.OrderStatusUpdate,
+          type: NotificationType.Order,
           title: 'Đơn hàng đã tự động hủy',
-          message: `Đơn hàng ${(order._id as any).toString().slice(-6).toUpperCase()} đã tự động bị hủy do quá hạn thanh toán 30 phút.`,
-          data: { orderId: order._id.toString() },
+          message: `Đơn hàng ${String(order._id).slice(-6).toUpperCase()} đã tự động bị hủy do quá hạn thanh toán 30 phút.`,
+          metadata: { orderId: order._id.toString() },
         });
       }
     } catch (err) {

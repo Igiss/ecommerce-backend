@@ -31,9 +31,7 @@ export class SePayPgClient {
   public get checkout() {
     return {
       initCheckoutUrl: (): string => {
-        return this.env === 'production'
-          ? 'https://pg.sepay.vn/checkout'
-          : 'https://sandbox.sepay.vn/payment/init';
+        return 'https://pg.sepay.vn/checkout';
       },
       initOneTimePaymentFields: (options: OneTimePaymentFieldsOptions): Record<string, string | number> => {
         const fields: Record<string, string | number> = {

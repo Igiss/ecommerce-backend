@@ -26,7 +26,6 @@ import { ParseMongoIdPipe } from "../common/pipes/parse-mongo-id.pipe";
 import { CancelOrderDto } from "./dto/cancel-order.dto";
 import { CreateOrderDto } from "./dto/create-order.dto";
 import { UpdateAdminOrderStatusDto } from "./dto/update-admin-order-status.dto";
-import { UpdateOrderStatusDto } from "./dto/update-order-status.dto";
 import { AssignUnitDto } from "./dto/assign-unit.dto";
 import { OrdersService } from "./orders.service";
 

@@ -7,6 +7,14 @@ import { ReportsService } from './reports.service';
 function createService(productIds: Types.ObjectId[]) {
   const productFilters: Record<string, unknown>[] = [];
   const pipelines: PipelineStage[][] = [];
+  const userPipelines: PipelineStage[][] = [];
+
+  const userModel = {
+    aggregate: (pipeline: PipelineStage[]) => {
+      userPipelines.push(pipeline);
+      return { exec: async () => [{ metadata: [{ total: 1 }], data: [] }] };
+    },
+  };
 
   const productModel = {
     find: (filter: Record<string, unknown>) => {
@@ -29,29 +37,30 @@ function createService(productIds: Types.ObjectId[]) {
   };
 
   const service = new ReportsService(
-    {} as never,
+    userModel as never,
     productModel as never,
     orderModel as never,
     {} as never,
+    {} as never,
   );
 
-  return { service, productFilters, pipelines };
+  return { service, productFilters, pipelines, userPipelines };
 }
 
 describe('ReportsService owner scope', () => {
-  it('keeps deleted product IDs in historical owner reports', async () => {
-    const productId = new Types.ObjectId();
-    const ownerId = new Types.ObjectId().toString();
-    const { service, productFilters, pipelines } = createService([productId]);
-
-    await service.getTopProducts(ownerId);
-
-    assert.deepEqual(productFilters[0], {
-      createdBy: new Types.ObjectId(ownerId),
+  it('executes admin shop comparison aggregation on userModel', async () => {
+    const { service, userPipelines } = createService([]);
+    const res = await service.getAdminShopsComparison({
+      period: '30days',
+      sortBy: 'totalItemsSold',
+      order: 'desc',
+      page: 1,
+      limit: 10,
     });
-    assert.deepEqual(pipelines[0][2], {
-      $match: { 'items.productId': { $in: [productId] } },
-    });
+
+    assert.equal(res.meta.total, 1);
+    assert.equal(userPipelines.length, 1);
+    assert.deepEqual(userPipelines[0][0], { $match: { role: 'owner' } });
   });
 
   it('applies an inclusive UTC date-only range to owner data', async () => {

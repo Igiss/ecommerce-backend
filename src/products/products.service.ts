@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, OnModuleInit, Inject, forwardRef } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { FilterQuery, Model, Types } from 'mongoose';
 import { buildPaginationMeta, getPagination } from '../common/helpers/pagination.helper';
@@ -10,6 +10,15 @@ import { UpdateProductDto } from './dto/update-product.dto';
 import { Product, ProductDocument, ProductStatus } from '../database/schemas/product.schema';
 import { Counter, CounterDocument } from '../database/schemas/counter.schema';
 import { User, UserDocument } from '../database/schemas/user.schema';
+import {
+  DiscountValueType,
+  PriceAdjustmentType,
+  ProductPriceSchedule,
+  ProductPriceScheduleDocument,
+  ScheduleStatus,
+} from '../database/schemas/product-price-schedule.schema';
+import { CreatePriceScheduleDto } from './dto/create-price-schedule.dto';
+import { PriceSchedulerService } from './price-scheduler.service';
 import { UploadTargetType, UploadType } from '../database/schemas/upload.schema';
 import { UploadService } from '../upload/upload.service';
 import { InventoryLogsService } from '../inventory-logs/inventory-logs.service';
@@ -22,11 +31,16 @@ export class ProductsService implements OnModuleInit {
     @InjectModel(Product.name) private readonly productModel: Model<ProductDocument>,
     @InjectModel(Counter.name) private readonly counterModel: Model<CounterDocument>,
     @InjectModel(User.name) private readonly userModel: Model<UserDocument>,
+    @InjectModel(ProductPriceSchedule.name)
+    private readonly priceScheduleModel: Model<ProductPriceScheduleDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly uploadService: UploadService,
     private readonly inventoryLogsService: InventoryLogsService,
     private readonly aiService: AiService,
+    @Inject(forwardRef(() => PriceSchedulerService))
+    private readonly priceSchedulerService: PriceSchedulerService,
   ) {}
+
 
 
   async onModuleInit() {
@@ -544,4 +558,102 @@ export class ProductsService implements OnModuleInit {
       await this.productModel.updateOne({ _id: product._id }, { productId }).exec();
     }
   }
+
+  async createPriceSchedule(dto: CreatePriceScheduleDto, userId: string) {
+    const product = Types.ObjectId.isValid(dto.productId)
+      ? await this.productModel.findById(dto.productId).exec()
+      : await this.productModel.findOne({ productId: Number(dto.productId) }).exec();
+
+    if (!product) {
+      throw new NotFoundException('Sản phẩm không tồn tại');
+    }
+
+    const startDate = new Date(dto.startDate);
+    if (isNaN(startDate.getTime())) {
+      throw new BadRequestException('Ngày bắt đầu không hợp lệ');
+    }
+
+    let endDate: Date | undefined;
+    if (dto.type === PriceAdjustmentType.SALE_CAMPAIGN) {
+      if (!dto.endDate) {
+        throw new BadRequestException('Chiến dịch Sale bắt buộc phải chọn ngày kết thúc');
+      }
+      endDate = new Date(dto.endDate);
+      if (isNaN(endDate.getTime()) || endDate <= startDate) {
+        throw new BadRequestException('Ngày kết thúc phải diễn ra sau ngày bắt đầu');
+      }
+    }
+
+    // Tính toán giá calculatedPrice
+    let calculatedPrice = product.price;
+    const valueType = dto.valueType || DiscountValueType.FIXED_PRICE;
+
+    if (valueType === DiscountValueType.FIXED_PRICE) {
+      calculatedPrice = dto.value;
+    } else if (valueType === DiscountValueType.PERCENTAGE) {
+      calculatedPrice = Math.max(0, Math.round(product.price * (1 - dto.value / 100)));
+    } else if (valueType === DiscountValueType.AMOUNT_OFF) {
+      calculatedPrice = Math.max(0, Math.round(product.price - dto.value));
+    }
+
+    const schedule = await this.priceScheduleModel.create({
+      productId: product._id,
+      type: dto.type,
+      valueType,
+      value: dto.value,
+      calculatedPrice,
+      startDate,
+      endDate,
+      status: ScheduleStatus.PENDING,
+      title:
+        dto.title ||
+        (dto.type === PriceAdjustmentType.BASE_PRICE_CHANGE
+          ? 'Hạ giá gốc'
+          : 'Chương trình Sale Khuyến mãi'),
+      createdBy: new Types.ObjectId(userId),
+    });
+
+    // Kích hoạt quét tức thì nếu thời gian bắt đầu đã đến
+    void this.priceSchedulerService.processPriceSchedules();
+
+    return schedule;
+  }
+
+  async getPriceSchedulesByProduct(productIdParam: string) {
+    const product = Types.ObjectId.isValid(productIdParam)
+      ? await this.productModel.findById(productIdParam).select('_id').exec()
+      : await this.productModel.findOne({ productId: Number(productIdParam) }).select('_id').exec();
+
+    const productId = product ? product._id : productIdParam;
+
+    return this.priceScheduleModel
+      .find({ productId })
+      .sort({ createdAt: -1 })
+      .populate('createdBy', 'fullName email storeName')
+      .exec();
+  }
+
+  async cancelPriceSchedule(scheduleId: string, userId: string) {
+    const schedule = await this.priceScheduleModel.findById(scheduleId).exec();
+    if (!schedule) {
+      throw new NotFoundException('Không tìm thấy lịch trình điều chỉnh giá');
+    }
+
+    if (schedule.status === ScheduleStatus.CANCELLED || schedule.status === ScheduleStatus.EXPIRED) {
+      throw new BadRequestException('Lịch trình giá đã ở trạng thái kết thúc/hủy trước đó');
+    }
+
+    // Nếu đang ACTIVE đợt Sale, gỡ bỏ giá Sale trên sản phẩm
+    if (schedule.status === ScheduleStatus.ACTIVE && schedule.type === PriceAdjustmentType.SALE_CAMPAIGN) {
+      await this.productModel.findByIdAndUpdate(schedule.productId, {
+        $unset: { salePrice: 1, saleStartDate: 1, saleEndDate: 1 },
+      });
+    }
+
+    schedule.status = ScheduleStatus.CANCELLED;
+    await schedule.save();
+
+    return schedule;
+  }
 }
+

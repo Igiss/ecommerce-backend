@@ -8,6 +8,7 @@ import { Product, ProductDocument } from '../database/schemas/product.schema';
 import { Coupon, CouponDocument } from '../database/schemas/coupon.schema';
 import { User, UserDocument } from '../database/schemas/user.schema';
 import { ReportDateQueryDto } from './dto/report-date-query.dto';
+import { AdminShopComparisonQueryDto } from './dto/admin-shop-comparison-query.dto';
 import { AiService } from '../ai/ai.service';
 
 type OrderDateFilter = {
@@ -298,6 +299,372 @@ export class ReportsService {
         blocked: userData.blockedUsers[0]?.count || 0,
       },
     };
+  }
+
+  /**
+   * Báo cáo so sánh chi tiết số lượng bán, doanh thu, đơn hàng giữa các Shop dành cho Admin
+   */
+  async getAdminShopsComparison(query: AdminShopComparisonQueryDto) {
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.max(1, Math.min(100, query.limit || 10));
+    const skip = (page - 1) * limit;
+
+    let startDate: Date | undefined;
+    let endDate: Date = new Date();
+
+    if (query.from || query.to) {
+      const filter = this.buildOrderDateFilter(query);
+      startDate = filter.createdAt?.$gte;
+      endDate = filter.createdAt?.$lte || new Date();
+    } else if (query.period) {
+      startDate = new Date(endDate);
+      if (query.period === '12months') {
+        startDate.setMonth(endDate.getMonth() - 11, 1);
+      } else {
+        startDate.setDate(endDate.getDate() - (query.period === '7days' ? 6 : 29));
+      }
+      startDate.setHours(0, 0, 0, 0);
+    }
+
+    const orderDateMatch: Record<string, any> = {};
+    if (startDate || endDate) {
+      orderDateMatch.createdAt = {
+        ...(startDate ? { $gte: startDate } : {}),
+        ...(endDate ? { $lte: endDate } : {}),
+      };
+    }
+
+    const ownerMatch: Record<string, any> = { role: Role.Owner };
+    if (query.search && query.search.trim()) {
+      const searchRegex = new RegExp(query.search.trim(), 'i');
+      ownerMatch.$or = [
+        { storeName: searchRegex },
+        { fullName: searchRegex },
+        { email: searchRegex },
+      ];
+    }
+
+    const sortField = query.sortBy || 'totalItemsSold';
+    const sortOrder = query.order === 'asc' ? 1 : -1;
+
+    const pipeline: PipelineStage[] = [
+      { $match: ownerMatch },
+      {
+        $lookup: {
+          from: 'products',
+          let: { ownerId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$createdBy', '$$ownerId'] },
+                    { $ne: ['$status', 'deleted'] },
+                  ],
+                },
+              },
+            },
+            { $count: 'count' },
+          ],
+          as: 'productCountDoc',
+        },
+      },
+      {
+        $lookup: {
+          from: 'orders',
+          let: { ownerId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                ...orderDateMatch,
+                'items.ownerId': { $exists: true },
+              },
+            },
+            { $unwind: '$items' },
+            {
+              $match: {
+                $expr: { $eq: ['$items.ownerId', '$$ownerId'] },
+              },
+            },
+            {
+              $group: {
+                _id: null,
+                orderIds: { $addToSet: '$_id' },
+                completedOrderIds: {
+                  $addToSet: {
+                    $cond: [
+                      { $eq: ['$items.fulfillmentStatus', OrderStatus.Completed] },
+                      '$_id',
+                      '$$REMOVE',
+                    ],
+                  },
+                },
+                totalItemsSold: {
+                  $sum: {
+                    $cond: [
+                      { $ne: ['$items.fulfillmentStatus', OrderStatus.Cancelled] },
+                      '$items.quantity',
+                      0,
+                    ],
+                  },
+                },
+                totalRevenue: {
+                  $sum: {
+                    $cond: [
+                      { $eq: ['$items.fulfillmentStatus', OrderStatus.Completed] },
+                      '$items.total',
+                      0,
+                    ],
+                  },
+                },
+              },
+            },
+          ],
+          as: 'orderStatsDoc',
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          ownerId: '$_id',
+          storeName: { $ifNull: ['$storeName', '$fullName'] },
+          fullName: '$fullName',
+          email: '$email',
+          phone: { $ifNull: ['$storePhone', '$phone'] },
+          avatar: '$avatar',
+          totalProducts: { $ifNull: [{ $arrayElemAt: ['$productCountDoc.count', 0] }, 0] },
+          totalOrders: {
+            $ifNull: [
+              { $size: { $ifNull: [{ $arrayElemAt: ['$orderStatsDoc.orderIds', 0] }, []] } },
+              0,
+            ],
+          },
+          completedOrders: {
+            $ifNull: [
+              { $size: { $ifNull: [{ $arrayElemAt: ['$orderStatsDoc.completedOrderIds', 0] }, []] } },
+              0,
+            ],
+          },
+          totalItemsSold: { $ifNull: [{ $arrayElemAt: ['$orderStatsDoc.totalItemsSold', 0] }, 0] },
+          totalRevenue: { $ifNull: [{ $arrayElemAt: ['$orderStatsDoc.totalRevenue', 0] }, 0] },
+        },
+      },
+      {
+        $addFields: {
+          completionRate: {
+            $cond: [
+              { $gt: ['$totalOrders', 0] },
+              {
+                $round: [
+                  { $multiply: [{ $divide: ['$completedOrders', '$totalOrders'] }, 100] },
+                  2,
+                ],
+              },
+              0,
+            ],
+          },
+        },
+      },
+      {
+        $facet: {
+          metadata: [{ $count: 'total' }],
+          data: [{ $sort: { [sortField]: sortOrder, storeName: 1 } }, { $skip: skip }, { $limit: limit }],
+        },
+      },
+    ];
+
+    const result = await this.userModel.aggregate(pipeline).exec();
+    const facetData = result[0] || { metadata: [], data: [] };
+    const total = facetData.metadata[0]?.total || 0;
+
+    return {
+      data: facetData.data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  /**
+   * Biểu đồ so sánh tăng trưởng doanh số/số lượng bán của Top các Shop theo thời gian
+   */
+  async getAdminShopsTrendChart(query: AdminShopComparisonQueryDto) {
+    const period = query.period || '30days';
+    const now = new Date();
+    const startDate = new Date(now);
+
+    if (period === '12months') {
+      startDate.setMonth(now.getMonth() - 11, 1);
+    } else {
+      startDate.setDate(now.getDate() - (period === '7days' ? 6 : 29));
+    }
+    startDate.setHours(0, 0, 0, 0);
+
+    const topShopsComparison = await this.getAdminShopsComparison({
+      period,
+      sortBy: query.sortBy || 'totalItemsSold',
+      order: 'desc',
+      page: 1,
+      limit: 5,
+    });
+
+    const topShopIds = topShopsComparison.data.map(
+      (shop: any) => new Types.ObjectId(shop.ownerId),
+    );
+
+    if (topShopIds.length === 0) {
+      return { period, shops: [], chartData: [] };
+    }
+
+    const isMonthly = period === '12months';
+    const dateGroup = isMonthly
+      ? {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+        }
+      : {
+          year: { $year: '$createdAt' },
+          month: { $month: '$createdAt' },
+          day: { $dayOfMonth: '$createdAt' },
+        };
+
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          createdAt: { $gte: startDate, $lte: now },
+          'items.ownerId': { $in: topShopIds },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $match: {
+          'items.ownerId': { $in: topShopIds },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            date: dateGroup,
+            ownerId: '$items.ownerId',
+          },
+          totalItemsSold: { $sum: '$items.quantity' },
+          totalRevenue: {
+            $sum: {
+              $cond: [
+                { $eq: ['$items.fulfillmentStatus', OrderStatus.Completed] },
+                '$items.total',
+                0,
+              ],
+            },
+          },
+        },
+      },
+      { $sort: { '_id.date.year': 1, '_id.date.month': 1, '_id.date.day': 1 } },
+    ];
+
+    const rawChartData = await this.orderModel.aggregate(pipeline).exec();
+
+    return {
+      period,
+      shops: topShopsComparison.data.map((shop: any) => ({
+        ownerId: shop.ownerId,
+        storeName: shop.storeName,
+      })),
+      chartData: rawChartData.map((item) => ({
+        date: item._id.date,
+        ownerId: item._id.ownerId,
+        totalItemsSold: item.totalItemsSold,
+        totalRevenue: item.totalRevenue,
+      })),
+    };
+  }
+
+  /**
+   * Thống kê đóng góp số lượng bán của các Shop theo từng Danh mục sản phẩm
+   */
+  async getAdminShopsCategoryBreakdown(query: ReportDateQueryDto = {}) {
+    const orderDateFilter = this.buildOrderDateFilter(query);
+
+    const pipeline: PipelineStage[] = [
+      {
+        $match: {
+          ...orderDateFilter,
+          'items.ownerId': { $exists: true },
+        },
+      },
+      { $unwind: '$items' },
+      {
+        $lookup: {
+          from: 'products',
+          localField: 'items.productId',
+          foreignField: '_id',
+          as: 'productDoc',
+        },
+      },
+      { $unwind: '$productDoc' },
+      {
+        $lookup: {
+          from: 'categories',
+          localField: 'productDoc.categoryId',
+          foreignField: '_id',
+          as: 'categoryDoc',
+        },
+      },
+      { $unwind: '$categoryDoc' },
+      {
+        $lookup: {
+          from: 'users',
+          localField: 'items.ownerId',
+          foreignField: '_id',
+          as: 'ownerDoc',
+        },
+      },
+      { $unwind: '$ownerDoc' },
+      {
+        $group: {
+          _id: {
+            categoryId: '$categoryDoc._id',
+            categoryName: '$categoryDoc.name',
+            ownerId: '$items.ownerId',
+            storeName: { $ifNull: ['$ownerDoc.storeName', '$ownerDoc.fullName'] },
+          },
+          totalItemsSold: { $sum: '$items.quantity' },
+          totalRevenue: {
+            $sum: {
+              $cond: [
+                { $eq: ['$items.fulfillmentStatus', OrderStatus.Completed] },
+                '$items.total',
+                0,
+              ],
+            },
+          },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            categoryId: '$_id.categoryId',
+            categoryName: '$_id.categoryName',
+          },
+          shops: {
+            $push: {
+              ownerId: '$_id.ownerId',
+              storeName: '$_id.storeName',
+              totalItemsSold: '$totalItemsSold',
+              totalRevenue: '$totalRevenue',
+            },
+          },
+          categoryTotalItemsSold: { $sum: '$totalItemsSold' },
+          categoryTotalRevenue: { $sum: '$totalRevenue' },
+        },
+      },
+      { $sort: { categoryTotalItemsSold: -1 } },
+    ];
+
+    return this.orderModel.aggregate(pipeline).exec();
   }
 
   async getOverview(ownerId?: string, query: ReportDateQueryDto = {}) {

@@ -187,12 +187,13 @@ ProductSchema.set('toJSON', {
   virtuals: true,
   versionKey: false,
   transform: (_doc, ret) => {
-    if (ret.productId) {
-      ret.id = ret.productId;
-    } else if (ret._id) {
-      ret.id = ret._id.toString();
+    const transformed = ret as unknown as Record<string, unknown>;
+    if (transformed.productId) {
+      transformed.id = transformed.productId;
+    } else if (transformed._id) {
+      transformed.id = String(transformed._id);
     }
-    delete ret.costPrice;
+    delete transformed.costPrice;
     return ret;
   },
 });
